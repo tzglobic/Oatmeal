@@ -11,6 +11,7 @@ final class MeetingListModel: ObservableObject {
 
 struct ContentView: View {
     @EnvironmentObject var model: MeetingListModel
+    @EnvironmentObject var recorder: RecordingController
 
     var body: some View {
         NavigationSplitView {
@@ -20,12 +21,20 @@ struct ContentView: View {
                         .foregroundStyle(.secondary)
                 } else {
                     ForEach(model.meetings) { meeting in
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(meeting.title)
-                                .lineLimit(1)
-                            Text(meeting.createdAt, style: .date)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(meeting.title)
+                                    .lineLimit(1)
+                                Text(meeting.createdAt, style: .date)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            if recorder.isRecording && recorder.activeMeeting?.id == meeting.id {
+                                Spacer()
+                                Image(systemName: "record.circle.fill")
+                                    .foregroundStyle(.red)
+                                    .font(.caption)
+                            }
                         }
                         .tag(meeting.id)
                     }
@@ -41,28 +50,47 @@ struct ContentView: View {
                 ContentUnavailableView(
                     "Select a meeting",
                     systemImage: "text.bubble",
-                    description: Text("Recording arrives in Phase 1 — set your API keys in Settings (⌘,) first.")
+                    description: Text("Press Record to capture a meeting, or set API keys in Settings (⌘,).")
                 )
             }
         }
-        .onAppear { model.reload() }
-    }
-}
-
-struct MeetingDetailView: View {
-    let meeting: Meeting
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(meeting.title).font(.title2).bold()
-            Text(meeting.createdAt, style: .date)
-                .foregroundStyle(.secondary)
-            Divider()
-            Text("Notes, transcript, and chat tabs arrive in Phases 1–4.")
-                .foregroundStyle(.secondary)
-            Spacer()
+        .toolbar {
+            ToolbarItem(placement: .status) {
+                if recorder.isRecording && !recorder.connectionStatus.isEmpty {
+                    Text(recorder.connectionStatus)
+                        .font(.caption)
+                        .foregroundStyle(recorder.connectionStatus == "Live" ? .green : .orange)
+                }
+            }
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    recorder.toggle()
+                } label: {
+                    if recorder.isRecording {
+                        Label("Stop", systemImage: "stop.circle.fill")
+                            .foregroundStyle(.red)
+                    } else {
+                        Label("Record", systemImage: "record.circle")
+                    }
+                }
+                .help(recorder.isRecording ? "Stop recording" : "Start recording a meeting")
+            }
         }
-        .padding()
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .onAppear { model.reload() }
+        .onChange(of: recorder.activeMeeting?.id) { _, newValue in
+            model.reload()
+            if let newValue { model.selection = newValue }
+        }
+        .onChange(of: recorder.isRecording) { _, _ in
+            model.reload()
+        }
+        .alert("Recording", isPresented: Binding(
+            get: { recorder.lastError != nil },
+            set: { if !$0 { recorder.lastError = nil } }
+        )) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(recorder.lastError ?? "")
+        }
     }
 }

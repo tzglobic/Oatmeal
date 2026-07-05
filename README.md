@@ -6,9 +6,15 @@ chat, briefs, and recipes. Full roadmap: [granola-clone-plan.md](granola-clone-p
 
 ## Status
 
-**Phase 0 (scaffold) — done.** App builds, API keys persist in the macOS Keychain and
-validate against Deepgram/Anthropic, and the (empty) meeting list renders.
-Next: Phase 1 — recording + live transcript ([research notes](docs/phase1-audio-research.md)).
+**Phase 1 (recording + live transcript) — done.** The Record button captures mic
+(AVAudioEngine) and system audio (ScreenCaptureKit, audio-only) simultaneously, streams
+both as one two-channel Deepgram connection (nova-3, multichannel), and renders a live
+Me/Them transcript with interim results. Final segments persist to SQLite as they arrive
+and survive restart; each meeting also gets a stereo `.m4a` fallback recording
+(mic = left, system = right). The Deepgram socket sends keepalives and reconnects with
+backoff, buffering up to 60s of audio while offline.
+Design notes: [docs/phase1-audio-research.md](docs/phase1-audio-research.md).
+Next: Phase 2 — notes editor + AI enhancement.
 
 ## Building
 

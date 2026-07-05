@@ -96,4 +96,32 @@ final class Store {
             try meeting.delete(db)
         }
     }
+
+    // MARK: - Transcript segments
+
+    func insert(_ segment: inout TranscriptSegment) throws {
+        try dbQueue.write { db in
+            try segment.insert(db)
+        }
+    }
+
+    func segments(for meetingId: String) throws -> [TranscriptSegment] {
+        try dbQueue.read { db in
+            try TranscriptSegment
+                .filter(Column("meetingId") == meetingId)
+                .order(Column("startTime"))
+                .fetchAll(db)
+        }
+    }
+
+    // MARK: - Files
+
+    static func recordingsDirectory() throws -> URL {
+        let fm = FileManager.default
+        let dir = try fm.url(for: .applicationSupportDirectory, in: .userDomainMask,
+                             appropriateFor: nil, create: true)
+            .appendingPathComponent("Oatmeal/Recordings", isDirectory: true)
+        try fm.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }
 }

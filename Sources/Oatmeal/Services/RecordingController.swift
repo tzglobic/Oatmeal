@@ -91,17 +91,23 @@ final class RecordingController: ObservableObject {
             Task { @MainActor in self?.handleStatus(status) }
         }
 
+        // System audio is required; the microphone is optional so a Mac with no
+        // input device (or a headless one over Screen Sharing) can still record
+        // the meeting — you just won't get a "Me" channel.
         do {
             try pipeline.start(recordingURL: recordingURL)
-            try mic.start()
             try await system.start()
         } catch {
             pipeline.stop()
-            mic.stop()
             await system.stop()
             try? Store.shared.delete(meeting)
             lastError = "Couldn't start recording: \(error.localizedDescription)"
             return
+        }
+        do {
+            try mic.start()
+        } catch {
+            lastError = "Recording meeting audio only — no microphone is available, so your own voice won't be transcribed."
         }
         streamer.connect()
 

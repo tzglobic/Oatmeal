@@ -1,6 +1,34 @@
-# Crash: SIGSEGV on button click (macOS 26 + Swift 6.2.x)
+# Crash: SIGSEGV on clicking Record (macOS 26)
 
-## Symptom
+## Actual root cause (confirmed)
+
+Clicking **Record** ran `MicCapture.start()`, which called
+`AVAudioNode.installTapOnBus(...)`. On a Mac with no usable audio input device
+(this was reproduced on a headless Mac mini accessed over Screen Sharing), AVAudioEngine
+**raises an Objective-C exception** — `"Input HW format is invalid"` /
+`"Failed to create tap due to format mismatch"`. On macOS 26 an Objective-C exception
+thrown on the main thread corrupts the Swift concurrency executor-tracking state, and
+the SwiftUI button's own gesture-completion executor check then segfaults. So the crash
+*looked* like a SwiftUI/compiler bug but was triggered by our own audio setup throwing.
+
+Caught with:
+```
+defaults write com.oatmeal.app NSApplicationCrashOnExceptions -bool YES   # or lldb: breakpoint set -n objc_exception_throw
+```
+which revealed the throw at `AudioCapture.swift` → `installTapOnBus`.
+
+**Fix:** `MicCapture.start()` now validates `inputNode.inputFormat(forBus: 0)`
+(sample rate and channel count > 0) and throws a Swift error instead of letting
+AVAudioEngine raise. `RecordingController` treats the microphone as optional and
+degrades to system-audio-only when there's no input device — no exception, no crash.
+
+The sections below were the *initial* (incorrect) diagnosis, kept for reference. The
+Swift 6.3 toolchain was **not** required to fix this crash; it's a reasonable dev
+setup but optional — the build script uses it only if present.
+
+---
+
+## Original symptom & first hypothesis (superseded)
 
 The app crashed with `EXC_BAD_ACCESS (SIGSEGV)` the moment any SwiftUI button was
 clicked (e.g. the Record button). The faulting stack was entirely in Apple frameworks:

@@ -46,24 +46,46 @@ final class PCM16Converter {
 /// Microphone capture via AVAudioEngine. The tap runs at the hardware format;
 /// requesting 16kHz directly in installTap is not supported.
 final class MicCapture {
+    enum CaptureError: LocalizedError {
+        case noInputDevice
+        var errorDescription: String? {
+            "No usable microphone was found on this Mac."
+        }
+    }
+
     private let engine = AVAudioEngine()
     private let converter = PCM16Converter()
+    private var tapInstalled = false
     var onSamples: (([Int16]) -> Void)?
 
     func start() throws {
         let input = engine.inputNode
-        let hwFormat = input.outputFormat(forBus: 0)
+        // `installTapOnBus` raises an Objective-C exception ("Input HW format is
+        // invalid" / "format mismatch") when there is no usable input device —
+        // e.g. a Mac with no microphone, or a headless machine over Screen
+        // Sharing. On macOS 26 an ObjC exception on the main thread corrupts the
+        // Swift concurrency executor state and later crashes the app, so we must
+        // NOT let it throw. Validate the input format first and surface a Swift
+        // error the caller can handle (record system audio only).
+        let hwFormat = input.inputFormat(forBus: 0)
+        guard hwFormat.sampleRate > 0, hwFormat.channelCount > 0 else {
+            throw CaptureError.noInputDevice
+        }
         input.installTap(onBus: 0, bufferSize: 4096, format: hwFormat) { [weak self] buffer, _ in
             guard let self else { return }
             let samples = self.converter.convert(buffer)
             if !samples.isEmpty { self.onSamples?(samples) }
         }
+        tapInstalled = true
         engine.prepare()
         try engine.start()
     }
 
     func stop() {
-        engine.inputNode.removeTap(onBus: 0)
+        if tapInstalled {
+            engine.inputNode.removeTap(onBus: 0)
+            tapInstalled = false
+        }
         engine.stop()
     }
 }

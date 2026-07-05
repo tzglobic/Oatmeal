@@ -46,7 +46,14 @@ final class RecordingController: ObservableObject {
         }
         if !CGPreflightScreenCaptureAccess() {
             CGRequestScreenCaptureAccess()
-            lastError = "Screen Recording permission is needed to capture meeting audio — Oatmeal never records your screen. Grant it in System Settings → Privacy & Security → Screen & System Audio Recording, then press Record again."
+            lastError = """
+                Screen Recording permission is needed to capture meeting audio — Oatmeal never records your screen.
+
+                1. Open System Settings → Privacy & Security → Screen & System Audio Recording and enable Oatmeal.
+                2. Quit and reopen Oatmeal — macOS only applies the grant on relaunch.
+
+                If Oatmeal already appears enabled there but you still see this, the app was rebuilt and macOS lost the grant: toggle Oatmeal off and on again, then relaunch.
+                """
             return
         }
 

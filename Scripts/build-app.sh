@@ -44,8 +44,23 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/Oatmeal"
 cp Support/Info.plist "$APP/Contents/Info.plist"
 
-# Ad-hoc signature for personal use. Phase 7 swaps this for Developer ID + notarization.
-codesign --force --sign - --entitlements Support/Oatmeal.entitlements "$APP"
+# Sign with a stable self-signed identity if one is installed, so macOS keeps the
+# Screen Recording / Microphone grant across rebuilds. Ad-hoc signatures change
+# their cdhash on every build, which makes macOS forget the TCC grant. Phase 7
+# swaps this for Developer ID + notarization.
+SIGN_ID="-"
+for candidate in "Oatmeal Dev" "LocalFlow Dev"; do
+    if security find-identity -v -p codesigning 2>/dev/null | grep -q "$candidate"; then
+        SIGN_ID="$candidate"
+        break
+    fi
+done
+if [ "$SIGN_ID" = "-" ]; then
+    echo "NOTE: signing ad-hoc. The Screen Recording grant will reset on each rebuild."
+    echo "      Create a stable identity (see docs/signing.md) to make it stick."
+fi
+codesign --force --sign "$SIGN_ID" --entitlements Support/Oatmeal.entitlements "$APP"
+echo "Signed with: $SIGN_ID"
 
 # Register with LaunchServices so macOS treats it as a real app (reduces
 # startup framework thrash for an ad-hoc bundle run from a build directory).

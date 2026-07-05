@@ -18,7 +18,14 @@ Next: Phase 2 — notes editor + AI enhancement.
 
 ## Building
 
-No Xcode required — the Command Line Tools are enough (SwiftPM + a bundling script):
+> **Requires a Swift 6.3+ toolchain.** The Command Line Tools' Swift 6.2.x compiler
+> miscompiles main-actor executor hops, which crashes SwiftUI button taps on
+> macOS 26 (see [docs/crash-macos26-executor.md](docs/crash-macos26-executor.md)).
+> A `swift-6.3.2-RELEASE` toolchain is installed under
+> `~/Library/Developer/Toolchains/`; `build-app.sh` finds it automatically. To get
+> one elsewhere: download from https://swift.org/download/ (no Xcode needed).
+
+No Xcode required — the Command Line Tools plus a 6.3+ toolchain are enough:
 
 ```sh
 Scripts/build-app.sh            # debug build → .build/Oatmeal.app

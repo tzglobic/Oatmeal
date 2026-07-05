@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleDevelopmentRegion</key>
+    <string>en</string>
+    <key>CFBundleExecutable</key>
+    <string>Oatmeal</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.oatmeal.app</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>CFBundleName</key>
+    <string>Oatmeal</string>
+    <key>CFBundleDisplayName</key>
+    <string>Oatmeal</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>0.1.0</string>
+    <key>CFBundleVersion</key>
+    <string>1</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>14.0</string>
+    <key>NSPrincipalClass</key>
+    <string>NSApplication</string>
+    <key>NSHighResolutionCapable</key>
+    <true/>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>Oatmeal records your microphone during meetings so your side of the conversation can be transcribed.</string>
+    <key>NSAudioCaptureUsageDescription</key>
+    <string>Oatmeal captures system audio during meetings to transcribe other participants. It never records or captures your screen contents.</string>
+    <key>NSCalendarsFullAccessUsageDescription</key>
+    <string>Oatmeal reads your calendar to automatically title recordings and link notes to the right meeting.</string>
+</dict>
+</plist>

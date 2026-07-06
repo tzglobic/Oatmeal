@@ -12,13 +12,16 @@ struct Meeting: Identifiable, Codable, Equatable, FetchableRecord, PersistableRe
     /// JSON-encoded array of attendee email addresses.
     var attendees: String?
     var audioFilePath: String?
+    /// NoteTemplate raw value used for AI enhancement.
+    var template: String
 
     static func new(title: String) -> Meeting {
         Meeting(id: UUID().uuidString, title: title, createdAt: Date())
     }
 
     init(id: String, title: String, createdAt: Date, endedAt: Date? = nil,
-         calendarEventId: String? = nil, attendees: String? = nil, audioFilePath: String? = nil) {
+         calendarEventId: String? = nil, attendees: String? = nil, audioFilePath: String? = nil,
+         template: String = NoteTemplate.standard.rawValue) {
         self.id = id
         self.title = title
         self.createdAt = createdAt
@@ -26,6 +29,7 @@ struct Meeting: Identifiable, Codable, Equatable, FetchableRecord, PersistableRe
         self.calendarEventId = calendarEventId
         self.attendees = attendees
         self.audioFilePath = audioFilePath
+        self.template = template
     }
 }
 

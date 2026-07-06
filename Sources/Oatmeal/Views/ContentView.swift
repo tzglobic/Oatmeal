@@ -37,6 +37,12 @@ struct ContentView: View {
                             }
                         }
                         .tag(meeting.id)
+                        .contextMenu {
+                            Button("Delete Meeting", role: .destructive) {
+                                deleteMeeting(meeting)
+                            }
+                            .disabled(recorder.isRecording && recorder.activeMeeting?.id == meeting.id)
+                        }
                     }
                 }
             }
@@ -46,6 +52,7 @@ struct ContentView: View {
             if let id = model.selection,
                let meeting = model.meetings.first(where: { $0.id == id }) {
                 MeetingDetailView(meeting: meeting)
+                    .id(meeting.id) // fresh notes state per meeting
             } else {
                 ContentUnavailableView(
                     "Select a meeting",
@@ -92,5 +99,15 @@ struct ContentView: View {
         } message: {
             Text(recorder.lastError ?? "")
         }
+    }
+
+    private func deleteMeeting(_ meeting: Meeting) {
+        // Deleting cascades to transcript segments, notes, and chats (FK).
+        try? Store.shared.delete(meeting)
+        if let path = meeting.audioFilePath {
+            try? FileManager.default.removeItem(atPath: path)
+        }
+        if model.selection == meeting.id { model.selection = nil }
+        model.reload()
     }
 }

@@ -1,0 +1,99 @@
+import Foundation
+import SwiftUI
+
+/// Per-meeting notes state: the user's raw notes, the AI-enhanced notes, and the
+/// enhancement pipeline. Edits auto-save (debounced) to SQLite.
+@MainActor
+final class NotesModel: ObservableObject {
+    let meetingId: String
+
+    @Published var userNotes: String = "" {
+        didSet { if !suppressSave { scheduleSave() } }
+    }
+    @Published var enhancedNotes: String = "" {
+        didSet { if !suppressSave { scheduleSave() } }
+    }
+    @Published var template: NoteTemplate = .standard {
+        didSet {
+            if !suppressSave {
+                try? Store.shared.updateTemplate(meetingId: meetingId, template: template.rawValue)
+            }
+        }
+    }
+    @Published var isEnhancing = false
+    @Published var errorMessage: String?
+
+    private var suppressSave = true
+    private var saveTask: Task<Void, Never>?
+
+    init(meeting: Meeting) {
+        meetingId = meeting.id
+        template = NoteTemplate(rawValue: meeting.template) ?? .standard
+        userNotes = (try? Store.shared.note(for: meetingId, kind: "user"))??.content ?? ""
+        enhancedNotes = (try? Store.shared.note(for: meetingId, kind: "enhanced"))??.content ?? ""
+        suppressSave = false
+    }
+
+    // MARK: - Persistence
+
+    private func scheduleSave() {
+        saveTask?.cancel()
+        saveTask = Task {
+            try? await Task.sleep(nanoseconds: 800_000_000)
+            guard !Task.isCancelled else { return }
+            persist()
+        }
+    }
+
+    /// Save immediately (e.g. when the view disappears).
+    func flush() {
+        saveTask?.cancel()
+        saveTask = nil
+        persist()
+    }
+
+    private func persist() {
+        let now = Date()
+        try? Store.shared.saveNote(Note(meetingId: meetingId, kind: "user",
+                                        content: userNotes, updatedAt: now))
+        try? Store.shared.saveNote(Note(meetingId: meetingId, kind: "enhanced",
+                                        content: enhancedNotes, updatedAt: now))
+    }
+
+    // MARK: - Enhancement
+
+    var canEnhance: Bool { !isEnhancing }
+
+    func enhance() {
+        guard !isEnhancing else { return }
+        let segments = (try? Store.shared.segments(for: meetingId)) ?? []
+        let hasNotes = !userNotes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        guard !segments.isEmpty || hasNotes else {
+            errorMessage = "Nothing to enhance yet — record the meeting or type some notes first."
+            return
+        }
+        isEnhancing = true
+        errorMessage = nil
+        let notes = userNotes
+        let transcript = Self.transcriptText(segments)
+        let template = template
+        Task {
+            do {
+                let result = try await AIService.enhanceNotes(
+                    userNotes: notes, transcript: transcript, template: template)
+                enhancedNotes = result
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+            isEnhancing = false
+        }
+    }
+
+    static func transcriptText(_ segments: [TranscriptSegment]) -> String {
+        segments.map { segment in
+            let t = Int(segment.startTime)
+            let speaker = segment.speaker == "me" ? "Me" : "Them"
+            return String(format: "[%@ %d:%02d] %@", speaker, t / 60, t % 60, segment.text)
+        }.joined(separator: "\n")
+    }
+}

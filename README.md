@@ -6,6 +6,15 @@ chat, briefs, and recipes. Full roadmap: [granola-clone-plan.md](granola-clone-p
 
 ## Status
 
+**Phase 2 (notes editor + AI enhancement) — done.** Each meeting has three tabs:
+**Notes** (AI-enhanced, editable), **Transcript**, and **My Notes** (raw notes you type
+during the meeting, auto-saved). When a recording stops, Claude merges your raw notes
+with the transcript into polished Markdown notes — summary, key points, decisions,
+action items — preserving your own bullets Granola-style. A template picker (Standard,
+1:1, Sales Call, Standup) switches the enhancement style; Re-enhance regenerates
+anytime; Copy puts any tab on the clipboard; meetings can be deleted from the sidebar.
+The mic is optional — on a Mac with no input device Oatmeal records system audio only.
+
 **Phase 1 (recording + live transcript) — done.** The Record button captures mic
 (AVAudioEngine) and system audio (ScreenCaptureKit, audio-only) simultaneously, streams
 both as one two-channel Deepgram connection (nova-3, multichannel), and renders a live
@@ -14,7 +23,7 @@ and survive restart; each meeting also gets a stereo `.m4a` fallback recording
 (mic = left, system = right). The Deepgram socket sends keepalives and reconnects with
 backoff, buffering up to 60s of audio while offline.
 Design notes: [docs/phase1-audio-research.md](docs/phase1-audio-research.md).
-Next: Phase 2 — notes editor + AI enhancement.
+Next: Phase 3 — calendar integration.
 
 ## Building
 

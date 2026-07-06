@@ -74,6 +74,12 @@ final class Store {
             }
         }
 
+        migrator.registerMigration("v2-meeting-template") { db in
+            try db.alter(table: "meetings") { t in
+                t.add(column: "template", .text).notNull().defaults(to: NoteTemplate.standard.rawValue)
+            }
+        }
+
         return migrator
     }
 
@@ -111,6 +117,27 @@ final class Store {
                 .filter(Column("meetingId") == meetingId)
                 .order(Column("startTime"))
                 .fetchAll(db)
+        }
+    }
+
+    // MARK: - Notes
+
+    func note(for meetingId: String, kind: String) throws -> Note? {
+        try dbQueue.read { db in
+            try Note.filter(Column("meetingId") == meetingId && Column("kind") == kind).fetchOne(db)
+        }
+    }
+
+    func saveNote(_ note: Note) throws {
+        try dbQueue.write { db in
+            try note.save(db)
+        }
+    }
+
+    func updateTemplate(meetingId: String, template: String) throws {
+        try dbQueue.write { db in
+            try db.execute(sql: "UPDATE meetings SET template = ? WHERE id = ?",
+                           arguments: [template, meetingId])
         }
     }
 

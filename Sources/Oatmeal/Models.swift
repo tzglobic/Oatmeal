@@ -29,6 +29,11 @@ struct Meeting: Identifiable, Codable, Equatable, FetchableRecord, PersistableRe
         return (try? JSONDecoder().decode([String: String].self, from: data)) ?? [:]
     }
 
+    var attendeesList: [String] {
+        guard let data = attendees?.data(using: .utf8) else { return [] }
+        return (try? JSONDecoder().decode([String].self, from: data)) ?? []
+    }
+
     init(id: String, title: String, createdAt: Date, endedAt: Date? = nil,
          calendarEventId: String? = nil, attendees: String? = nil, audioFilePath: String? = nil,
          template: String = NoteTemplate.standard.rawValue, speakerNames: String? = nil) {

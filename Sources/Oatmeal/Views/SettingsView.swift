@@ -1,11 +1,13 @@
 import SwiftUI
 import AVFoundation
 import CoreGraphics
+import EventKit
 
 /// One-glance health panel: are the permissions and keys this app needs in place?
 struct PermissionsHealthView: View {
     @State private var micStatus: AVAuthorizationStatus = .notDetermined
     @State private var screenGranted = false
+    @State private var calendarStatus: EKAuthorizationStatus = .notDetermined
     @State private var hasDeepgramKey = false
     @State private var hasAnthropicKey = false
 
@@ -25,6 +27,22 @@ struct PermissionsHealthView: View {
                       detail: screenGranted ? "Granted"
                             : "Not granted — needed to capture meeting audio (no video is recorded)") {
                 openPrivacyPane("Privacy_ScreenCapture")
+            }
+            statusRow(ok: calendarStatus == .fullAccess,
+                      pending: calendarStatus == .notDetermined,
+                      title: "Calendar (Outlook / Teams)",
+                      detail: calendarStatus == .fullAccess
+                            ? "Granted — Outlook events appear once the account is in System Settings → Internet Accounts"
+                            : calendarStatus == .notDetermined ? "Not requested yet"
+                            : "Denied — Up Next and auto-titling are off") {
+                if calendarStatus == .notDetermined {
+                    Task {
+                        await CalendarService.shared.requestAccessAndStart()
+                        refresh()
+                    }
+                } else {
+                    openPrivacyPane("Privacy_Calendars")
+                }
             }
             statusRow(ok: hasDeepgramKey, pending: false,
                       title: "Deepgram API key",
@@ -69,6 +87,7 @@ struct PermissionsHealthView: View {
     private func refresh() {
         micStatus = AVCaptureDevice.authorizationStatus(for: .audio)
         screenGranted = CGPreflightScreenCaptureAccess()
+        calendarStatus = EKEventStore.authorizationStatus(for: .event)
         hasDeepgramKey = !(KeychainStore.get(.deepgram) ?? "").isEmpty
         hasAnthropicKey = !(KeychainStore.get(.anthropic) ?? "").isEmpty
     }

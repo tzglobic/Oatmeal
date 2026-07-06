@@ -35,6 +35,7 @@ final class MeetingListModel: ObservableObject {
 struct ContentView: View {
     @EnvironmentObject var model: MeetingListModel
     @EnvironmentObject var recorder: RecordingController
+    @ObservedObject private var calendar = CalendarService.shared
     @State private var renameTarget: Meeting?
     @State private var renameText = ""
 
@@ -47,7 +48,10 @@ struct ContentView: View {
             detail
         }
         .toolbar { toolbarContent }
-        .onAppear { model.reload() }
+        .onAppear {
+            model.reload()
+            Task { await CalendarService.shared.requestAccessAndStart() }
+        }
         .onChange(of: recorder.activeMeeting?.id) { _, newValue in
             model.reload()
             if let newValue { model.selection = newValue }
@@ -88,6 +92,17 @@ struct ContentView: View {
             if model.searchText.isEmpty {
                 Label("Action Items", systemImage: "checklist")
                     .tag(Self.actionItemsID)
+            }
+            if model.searchText.isEmpty && calendar.hasAccess && !calendar.upcoming.isEmpty {
+                Section("Up Next") {
+                    ForEach(calendar.upcoming.prefix(6)) { event in
+                        UpcomingMeetingRow(
+                            meeting: event,
+                            recordDisabled: recorder.isRecording,
+                            record: { Task { await recorder.start(calendarMeeting: event) } })
+                            .selectionDisabled()
+                    }
+                }
             }
             Section("Meetings") {
                 if model.displayed.isEmpty {
@@ -234,6 +249,60 @@ struct ContentView: View {
         }
         if model.selection == meeting.id { model.selection = nil }
         model.reload()
+    }
+}
+
+/// Calendar event row in the "Up Next" sidebar section, with Join and Record.
+struct UpcomingMeetingRow: View {
+    let meeting: UpcomingMeeting
+    let recordDisabled: Bool
+    let record: () -> Void
+
+    var body: some View {
+        HStack(spacing: 6) {
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 4) {
+                    Text(meeting.title).lineLimit(1)
+                    if meeting.isNow {
+                        Text("Now")
+                            .font(.caption2.bold())
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 1)
+                            .background(Capsule().fill(Color.red.opacity(0.18)))
+                            .foregroundStyle(.red)
+                    }
+                }
+                HStack(spacing: 4) {
+                    Text("\(meeting.start.formatted(date: .omitted, time: .shortened))–\(meeting.end.formatted(date: .omitted, time: .shortened))")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    if let provider = meeting.provider {
+                        Text(provider)
+                            .font(.caption2)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 1)
+                            .background(Capsule().fill(Color.blue.opacity(0.15)))
+                            .foregroundStyle(.blue)
+                    }
+                }
+            }
+            Spacer(minLength: 0)
+            if let url = meeting.callURL {
+                Button {
+                    NSWorkspace.shared.open(url)
+                } label: {
+                    Image(systemName: "video")
+                }
+                .buttonStyle(.borderless)
+                .help("Join the \(meeting.provider ?? "video") call")
+            }
+            Button(action: record) {
+                Image(systemName: "record.circle")
+            }
+            .buttonStyle(.borderless)
+            .disabled(recordDisabled)
+            .help("Record this meeting")
+        }
     }
 }
 

@@ -99,6 +99,14 @@ struct ContentView: View {
         } message: {
             Text(recorder.lastError ?? "")
         }
+        .alert("Recording Warning", isPresented: Binding(
+            get: { recorder.warning != nil },
+            set: { if !$0 { recorder.warning = nil } }
+        )) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(recorder.warning ?? "")
+        }
     }
 
     private func deleteMeeting(_ meeting: Meeting) {

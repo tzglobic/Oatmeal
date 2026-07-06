@@ -43,6 +43,9 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/Oatmeal"
 cp Support/Info.plist "$APP/Contents/Info.plist"
+if [ -f Support/Oatmeal.icns ]; then
+    cp Support/Oatmeal.icns "$APP/Contents/Resources/Oatmeal.icns"
+fi
 
 # Sign with a stable self-signed identity if one is installed, so macOS keeps the
 # Screen Recording / Microphone grant across rebuilds. Ad-hoc signatures change

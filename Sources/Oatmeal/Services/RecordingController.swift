@@ -7,6 +7,10 @@ import CoreGraphics
 /// → Deepgram streaming → live transcript state → persistence.
 @MainActor
 final class RecordingController: ObservableObject {
+    /// Single app-wide instance — the window, menu bar extra, and notification
+    /// actions all drive the same recorder.
+    static let shared = RecordingController()
+
     @Published var isRecording = false
     @Published var isPaused = false
     @Published var activeMeeting: Meeting?
@@ -38,7 +42,10 @@ final class RecordingController: ObservableObject {
         }
     }
 
-    func start() async {
+    /// Starts a recording. Pass a calendar event to pre-associate it; otherwise
+    /// the event happening right now (if any) is attached automatically —
+    /// title, event id, and attendees come from the calendar.
+    func start(calendarMeeting: UpcomingMeeting? = nil) async {
         lastError = nil
         warning = nil
 
@@ -59,7 +66,19 @@ final class RecordingController: ObservableObject {
             CGRequestScreenCaptureAccess()
         }
 
-        var meeting = Meeting.new(title: "Meeting \(Self.titleFormatter.string(from: Date()))")
+        let event = calendarMeeting ?? CalendarService.shared.currentMeeting()
+        var title = "Meeting \(Self.titleFormatter.string(from: Date()))"
+        if let eventTitle = event?.title.trimmingCharacters(in: .whitespaces), !eventTitle.isEmpty {
+            title = eventTitle
+        }
+        var meeting = Meeting.new(title: title)
+        if let event {
+            meeting.calendarEventId = event.eventId
+            if !event.attendees.isEmpty,
+               let data = try? JSONEncoder().encode(event.attendees) {
+                meeting.attendees = String(data: data, encoding: .utf8)
+            }
+        }
         let recordingURL: URL
         do {
             let dir = try Store.recordingsDirectory()

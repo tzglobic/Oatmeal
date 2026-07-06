@@ -110,6 +110,14 @@ struct MeetingDetailView: View {
                     .fixedSize()
             }
 
+            if !meeting.attendeesList.isEmpty {
+                Label(meeting.attendeesList.joined(separator: ", "), systemImage: "person.2")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .help(meeting.attendeesList.joined(separator: "\n"))
+            }
+
             HStack(spacing: 10) {
                 Picker("", selection: $tab) {
                     ForEach(Tab.allCases) { t in Text(t.rawValue).tag(t) }

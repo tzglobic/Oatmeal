@@ -6,6 +6,18 @@ chat, briefs, and recipes. Full roadmap: [granola-clone-plan.md](granola-clone-p
 
 ## Status
 
+**Phase 3 (calendar integration — Outlook/Teams) — done.**
+An **Up Next** sidebar section lists today's and tomorrow's calendar events (read via
+EventKit) with a **Join** button for detected video-call links — **Teams**
+(teams.microsoft.com / teams.live.com), Zoom, Meet, and Webex — and a per-event
+**Record** button. Recording an event (or pressing plain Record while one is live)
+**auto-titles** the meeting from the calendar and stores the **attendee list**, shown
+under the title. Call-link events fire a local **"Meeting starting" notification**
+with a Start Recording action. Settings' health panel gains a Calendar row.
+**Outlook requirement:** add your Microsoft 365 / Outlook account under
+System Settings → Internet Accounts (Microsoft Exchange) with Calendars enabled —
+EventKit reads Outlook events (including Teams links) from there.
+
 **Phase 2.5 (quality-of-life batch) — done.**
 Live mic/system **level meters** and an elapsed timer in the toolbar while recording,
 plus **pause/resume** (pause mutes both channels while the clock keeps running, so

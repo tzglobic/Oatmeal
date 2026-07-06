@@ -4,7 +4,7 @@ import SwiftUI
 struct OatmealApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var store = MeetingListModel()
-    @StateObject private var recorder = RecordingController()
+    @StateObject private var recorder = RecordingController.shared
 
     var body: some Scene {
         WindowGroup {

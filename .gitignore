@@ -1,4 +1,5 @@
 .build/
+Support/Oatmeal.iconset/
 .swiftpm/
 .DS_Store
 *.xcodeproj

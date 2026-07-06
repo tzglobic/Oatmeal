@@ -13,6 +13,7 @@ final class RecordingController: ObservableObject {
     @Published var interim: [Int: String] = [:] // channel → in-progress text
     @Published var connectionStatus: String = ""
     @Published var lastError: String?
+    @Published var warning: String?
 
     private var mic: MicCapture?
     private var system: SystemAudioCapture?
@@ -35,6 +36,7 @@ final class RecordingController: ObservableObject {
 
     func start() async {
         lastError = nil
+        warning = nil
 
         guard let apiKey = KeychainStore.get(.deepgram), !apiKey.isEmpty else {
             lastError = "Add your Deepgram API key in Settings (⌘,) before recording."
@@ -44,17 +46,13 @@ final class RecordingController: ObservableObject {
             lastError = "Microphone access denied. Enable it in System Settings → Privacy & Security → Microphone."
             return
         }
-        if !CGPreflightScreenCaptureAccess() {
+        let screenCapturePreflightGranted = CGPreflightScreenCaptureAccess()
+        if !screenCapturePreflightGranted {
+            // This registers Oatmeal in System Settings. Do not return here:
+            // macOS can allow System Audio Recording Only while the older screen
+            // capture preflight still reports false. The source of truth is
+            // whether ScreenCaptureKit can actually start the audio stream below.
             CGRequestScreenCaptureAccess()
-            lastError = """
-                Screen Recording permission is needed to capture meeting audio — Oatmeal never records your screen.
-
-                1. Open System Settings → Privacy & Security → Screen & System Audio Recording and enable Oatmeal.
-                2. Quit and reopen Oatmeal — macOS only applies the grant on relaunch.
-
-                If Oatmeal already appears enabled there but you still see this, the app was rebuilt and macOS lost the grant: toggle Oatmeal off and on again, then relaunch.
-                """
-            return
         }
 
         var meeting = Meeting.new(title: "Meeting \(Self.titleFormatter.string(from: Date()))")
@@ -91,34 +89,68 @@ final class RecordingController: ObservableObject {
             Task { @MainActor in self?.handleStatus(status) }
         }
 
-        // System audio is required; the microphone is optional so a Mac with no
-        // input device (or a headless one over Screen Sharing) can still record
-        // the meeting — you just won't get a "Me" channel.
+        // Prefer both system audio and mic, but allow either source to keep
+        // recording useful while macOS TCC is being straightened out.
+        var systemStarted = false
+        var micStarted = false
         do {
             try pipeline.start(recordingURL: recordingURL)
             try await system.start()
+            systemStarted = true
         } catch {
-            pipeline.stop()
             await system.stop()
-            try? Store.shared.delete(meeting)
-            lastError = "Couldn't start recording: \(error.localizedDescription)"
-            return
+            warning = systemAudioStartMessage(error: error, preflightGranted: screenCapturePreflightGranted)
         }
         do {
             try mic.start()
+            micStarted = true
         } catch {
-            lastError = "Recording meeting audio only — no microphone is available, so your own voice won't be transcribed."
+            if warning == nil {
+                warning = "Recording meeting audio only — no microphone is available, so your own voice won't be transcribed."
+            } else {
+                pipeline.stop()
+                try? Store.shared.delete(meeting)
+                lastError = """
+                    Couldn't start recording.
+
+                    System audio: unavailable.
+                    Microphone: no usable microphone was found.
+                    """
+                return
+            }
+        }
+        guard systemStarted || micStarted else {
+            pipeline.stop()
+            try? Store.shared.delete(meeting)
+            lastError = "Couldn't start recording: no audio source was available."
+            return
         }
         streamer.connect()
 
         self.pipeline = pipeline
-        self.mic = mic
-        self.system = system
+        self.mic = micStarted ? mic : nil
+        self.system = systemStarted ? system : nil
         self.streamer = streamer
         self.activeMeeting = meeting
         self.liveSegments = []
         self.interim = [:]
         self.isRecording = true
+    }
+
+    private func systemAudioStartMessage(error: Error, preflightGranted: Bool) -> String {
+        if preflightGranted {
+            return "Couldn't start recording: \(error.localizedDescription)"
+        }
+        return """
+            Couldn't start system audio capture: \(error.localizedDescription)
+
+            Oatmeal is enabled in System Settings, but macOS has not applied the grant to this running copy yet.
+
+            1. Quit Oatmeal completely.
+            2. Open System Settings → Privacy & Security → Screen & System Audio Recording.
+            3. Remove Oatmeal from the list if there are duplicate entries, then add ~/Applications/Oatmeal.app.
+            4. Enable Oatmeal and reopen it.
+            """
     }
 
     func stop() async {
@@ -142,6 +174,7 @@ final class RecordingController: ObservableObject {
         }
         interim = [:]
         connectionStatus = ""
+        warning = nil
         isRecording = false
     }
 

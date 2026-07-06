@@ -8,12 +8,16 @@ import CoreGraphics
 @MainActor
 final class RecordingController: ObservableObject {
     @Published var isRecording = false
+    @Published var isPaused = false
     @Published var activeMeeting: Meeting?
     @Published var liveSegments: [TranscriptSegment] = []
     @Published var interim: [Int: String] = [:] // channel → in-progress text
     @Published var connectionStatus: String = ""
     @Published var lastError: String?
     @Published var warning: String?
+    @Published var micLevel: Float = 0
+    @Published var systemLevel: Float = 0
+    @Published var recordingStart: Date?
 
     private var mic: MicCapture?
     private var system: SystemAudioCapture?
@@ -82,6 +86,12 @@ final class RecordingController: ObservableObject {
             }
         }
         pipeline.onChunk = { [weak streamer] data in streamer?.send(data) }
+        pipeline.onLevels = { [weak self] mic, system in
+            Task { @MainActor in
+                self?.micLevel = mic
+                self?.systemLevel = system
+            }
+        }
         streamer.onSegment = { [weak self] segment in
             Task { @MainActor in self?.handleSegment(segment) }
         }
@@ -134,7 +144,15 @@ final class RecordingController: ObservableObject {
         self.activeMeeting = meeting
         self.liveSegments = []
         self.interim = [:]
+        self.recordingStart = recordingStart
+        self.isPaused = false
         self.isRecording = true
+    }
+
+    func togglePause() {
+        guard isRecording else { return }
+        isPaused.toggle()
+        pipeline?.setPaused(isPaused)
     }
 
     private func systemAudioStartMessage(error: Error, preflightGranted: Bool) -> String {
@@ -148,7 +166,7 @@ final class RecordingController: ObservableObject {
 
             1. Quit Oatmeal completely.
             2. Open System Settings → Privacy & Security → Screen & System Audio Recording.
-            3. Remove Oatmeal from the list if there are duplicate entries, then add ~/Applications/Oatmeal.app.
+            3. Remove Oatmeal from the list if there are duplicate entries, then add \(Bundle.main.bundlePath).
             4. Enable Oatmeal and reopen it.
             """
     }
@@ -175,6 +193,10 @@ final class RecordingController: ObservableObject {
         interim = [:]
         connectionStatus = ""
         warning = nil
+        micLevel = 0
+        systemLevel = 0
+        recordingStart = nil
+        isPaused = false
         isRecording = false
     }
 
@@ -182,7 +204,7 @@ final class RecordingController: ObservableObject {
 
     private func handleSegment(_ segment: DeepgramStreamer.Segment) {
         guard let meeting = activeMeeting, isRecording else { return }
-        let speaker = segment.channel == 0 ? "me" : "them"
+        let speaker = speakerKey(channel: segment.channel, speakerIndex: segment.speakerIndex)
 
         if segment.isFinal {
             interim[segment.channel] = nil

@@ -6,6 +6,8 @@ import Foundation
 final class DeepgramStreamer: NSObject, URLSessionWebSocketDelegate {
     struct Segment {
         let channel: Int
+        /// Diarized speaker index within the channel (majority vote over words).
+        let speakerIndex: Int?
         let text: String
         let start: Double   // seconds since recording start
         let end: Double
@@ -61,6 +63,9 @@ final class DeepgramStreamer: NSObject, URLSessionWebSocketDelegate {
             .init(name: "interim_results", value: "true"),
             .init(name: "smart_format", value: "true"),
             .init(name: "endpointing", value: "300"),
+            // Split multiple remote speakers within the system-audio channel.
+            .init(name: "diarize", value: "true"),
+            .init(name: "diarize_model", value: "latest"),
         ]
         var request = URLRequest(url: components.url!)
         request.setValue("Token \(apiKey)", forHTTPHeaderField: "Authorization")
@@ -126,7 +131,11 @@ final class DeepgramStreamer: NSObject, URLSessionWebSocketDelegate {
 
     private struct DGResponse: Decodable {
         struct Channel: Decodable {
-            struct Alternative: Decodable { let transcript: String }
+            struct Word: Decodable { let speaker: Int? }
+            struct Alternative: Decodable {
+                let transcript: String
+                let words: [Word]?
+            }
             let alternatives: [Alternative]
         }
         let type: String?
@@ -145,8 +154,14 @@ final class DeepgramStreamer: NSObject, URLSessionWebSocketDelegate {
               let channel = response.channel_index?.first,
               let start = response.start else { return }
 
+        // Majority vote over word-level diarization for this result.
+        let speakers = (alternative.words ?? []).compactMap(\.speaker)
+        let speakerIndex = Dictionary(grouping: speakers, by: { $0 })
+            .max { $0.value.count < $1.value.count }?.key
+
         let segment = Segment(
             channel: channel,
+            speakerIndex: speakerIndex,
             text: alternative.transcript.trimmingCharacters(in: .whitespaces),
             start: connectionOffset + start,
             end: connectionOffset + start + (response.duration ?? 0),

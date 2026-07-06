@@ -80,6 +80,12 @@ final class Store {
             }
         }
 
+        migrator.registerMigration("v3-speaker-names") { db in
+            try db.alter(table: "meetings") { t in
+                t.add(column: "speakerNames", .text)
+            }
+        }
+
         return migrator
     }
 
@@ -103,6 +109,51 @@ final class Store {
         }
     }
 
+    func meeting(id: String) throws -> Meeting? {
+        try dbQueue.read { db in
+            try Meeting.fetchOne(db, key: id)
+        }
+    }
+
+    func updateTitle(meetingId: String, title: String) throws {
+        try dbQueue.write { db in
+            try db.execute(sql: "UPDATE meetings SET title = ? WHERE id = ?",
+                           arguments: [title, meetingId])
+        }
+    }
+
+    func updateSpeakerName(meetingId: String, key: String, name: String) throws {
+        try dbQueue.write { db in
+            guard var meeting = try Meeting.fetchOne(db, key: meetingId) else { return }
+            var map = meeting.speakerNameMap
+            let trimmed = name.trimmingCharacters(in: .whitespaces)
+            if trimmed.isEmpty {
+                map.removeValue(forKey: key)
+            } else {
+                map[key] = trimmed
+            }
+            meeting.speakerNames = String(data: try JSONEncoder().encode(map), encoding: .utf8)
+            try meeting.save(db)
+        }
+    }
+
+    /// Case-insensitive substring search across titles, transcripts, and notes.
+    /// LIKE is plenty at personal scale; swap for FTS5 when Phase 4 chat needs it.
+    func searchMeetings(_ query: String) throws -> [Meeting] {
+        let pattern = "%\(query)%"
+        return try dbQueue.read { db in
+            try Meeting.fetchAll(db, sql: """
+                SELECT DISTINCT meetings.* FROM meetings
+                LEFT JOIN transcript_segments ON transcript_segments.meetingId = meetings.id
+                LEFT JOIN notes ON notes.meetingId = meetings.id
+                WHERE meetings.title LIKE :p
+                   OR transcript_segments.text LIKE :p
+                   OR notes.content LIKE :p
+                ORDER BY meetings.createdAt DESC
+                """, arguments: ["p": pattern])
+        }
+    }
+
     // MARK: - Transcript segments
 
     func insert(_ segment: inout TranscriptSegment) throws {
@@ -120,6 +171,16 @@ final class Store {
         }
     }
 
+    /// Atomically replace a meeting's transcript (used by re-transcription).
+    func replaceSegments(for meetingId: String, with segments: [TranscriptSegment]) throws {
+        try dbQueue.write { db in
+            try TranscriptSegment.filter(Column("meetingId") == meetingId).deleteAll(db)
+            for var segment in segments {
+                try segment.insert(db)
+            }
+        }
+    }
+
     // MARK: - Notes
 
     func note(for meetingId: String, kind: String) throws -> Note? {
@@ -131,6 +192,17 @@ final class Store {
     func saveNote(_ note: Note) throws {
         try dbQueue.write { db in
             try note.save(db)
+        }
+    }
+
+    /// All enhanced notes with their meetings, for the action-items rollup.
+    func enhancedNotesWithMeetings() throws -> [(note: Note, meeting: Meeting)] {
+        try dbQueue.read { db in
+            let notes = try Note.filter(Column("kind") == "enhanced").fetchAll(db)
+            let ids = notes.map(\.meetingId)
+            let meetings = try Meeting.filter(ids.contains(Column("id"))).fetchAll(db)
+            let byId = Dictionary(uniqueKeysWithValues: meetings.map { ($0.id, $0) })
+            return notes.compactMap { note in byId[note.meetingId].map { (note, $0) } }
         }
     }
 

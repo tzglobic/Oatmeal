@@ -8,9 +8,12 @@ import AVFoundation
 /// silence to keep the two channels aligned.
 final class AudioPipeline {
     var onChunk: ((Data) -> Void)?
+    /// Called ~10x/sec with (mic, system) levels in 0…1.
+    var onLevels: ((Float, Float) -> Void)?
 
     private var micBuffer: [Int16] = []
     private var systemBuffer: [Int16] = []
+    private var paused = false
     private let lock = NSLock()
     private var timer: DispatchSourceTimer?
     private var audioFile: AVAudioFile?
@@ -63,13 +66,34 @@ final class AudioPipeline {
         audioFile = nil // AVAudioFile finalizes on dealloc
     }
 
+    /// While paused, both channels emit silence — the Deepgram timeline and the
+    /// .m4a stay aligned with wall-clock time, so resume needs no offset math.
+    func setPaused(_ value: Bool) {
+        lock.lock()
+        paused = value
+        micBuffer.removeAll()
+        systemBuffer.removeAll()
+        lock.unlock()
+    }
+
     private func drain() {
         lock.lock()
-        var mic = Array(micBuffer.prefix(chunkFrames))
-        micBuffer.removeFirst(min(chunkFrames, micBuffer.count))
-        var system = Array(systemBuffer.prefix(chunkFrames))
-        systemBuffer.removeFirst(min(chunkFrames, systemBuffer.count))
+        var mic: [Int16]
+        var system: [Int16]
+        if paused {
+            micBuffer.removeAll()
+            systemBuffer.removeAll()
+            mic = []
+            system = []
+        } else {
+            mic = Array(micBuffer.prefix(chunkFrames))
+            micBuffer.removeFirst(min(chunkFrames, micBuffer.count))
+            system = Array(systemBuffer.prefix(chunkFrames))
+            systemBuffer.removeFirst(min(chunkFrames, systemBuffer.count))
+        }
         lock.unlock()
+
+        onLevels?(Self.level(mic), Self.level(system))
 
         if mic.count < chunkFrames {
             mic.append(contentsOf: repeatElement(0, count: chunkFrames - mic.count))
@@ -87,6 +111,15 @@ final class AudioPipeline {
         let data = interleaved.withUnsafeBufferPointer { Data(buffer: $0) }
         onChunk?(data)
         writeToFile(interleaved)
+    }
+
+    /// RMS of the chunk mapped to 0…1, scaled so normal speech reads mid-meter.
+    private static func level(_ samples: [Int16]) -> Float {
+        guard !samples.isEmpty else { return 0 }
+        var sum = 0.0
+        for s in samples { sum += Double(s) * Double(s) }
+        let rms = (sum / Double(samples.count)).squareRoot() / 32768.0
+        return Float(min(1.0, rms * 6.0))
     }
 
     private func writeToFile(_ interleaved: [Int16]) {

@@ -16,5 +16,26 @@ struct OatmealApp: App {
         Settings {
             SettingsView()
         }
+        MenuBarExtra {
+            if recorder.isRecording {
+                Button("Stop Recording") { recorder.toggle() }
+                Button(recorder.isPaused ? "Resume Recording" : "Pause Recording") {
+                    recorder.togglePause()
+                }
+            } else {
+                Button("Start Recording") { recorder.toggle() }
+            }
+            Divider()
+            Button("Open Oatmeal") {
+                NSApp.activate(ignoringOtherApps: true)
+                NSApp.windows.first(where: { $0.canBecomeKey })?.makeKeyAndOrderFront(nil)
+            }
+            Divider()
+            Button("Quit Oatmeal") { NSApp.terminate(nil) }
+        } label: {
+            Image(systemName: recorder.isRecording
+                  ? (recorder.isPaused ? "pause.circle.fill" : "record.circle.fill")
+                  : "waveform.circle")
+        }
     }
 }

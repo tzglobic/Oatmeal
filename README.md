@@ -6,6 +6,20 @@ chat, briefs, and recipes. Full roadmap: [granola-clone-plan.md](granola-clone-p
 
 ## Status
 
+**Phase 2.5 (quality-of-life batch) — done.**
+Live mic/system **level meters** and an elapsed timer in the toolbar while recording,
+plus **pause/resume** (pause mutes both channels while the clock keeps running, so
+timestamps stay aligned). **AI auto-titles** replace "Meeting Jul 6…" after enhancement
+(never overwriting a manual title). **Re-transcribe from audio** rebuilds a meeting's
+transcript from its `.m4a` via Deepgram's cheaper batch API. The transcript is now a
+player: **click any line to hear it**, with a play bar and live highlight. **Search**
+covers titles, transcripts, and notes from the sidebar. An **Action Items** view rolls
+up unchecked `- [ ]` items across all meetings with click-to-toggle. **Diarization**
+splits multiple remote speakers (Them 1 / Them 2) with right-click **speaker rename**.
+Meetings can be **renamed** inline (detail header) or via the sidebar context menu.
+Settings gains a **health panel** (permissions + keys at a glance), and a **menu-bar
+item** starts/stops/pauses recording without the main window.
+
 **Phase 2 (notes editor + AI enhancement) — done.** Each meeting has three tabs:
 **Notes** (AI-enhanced, editable), **Transcript**, and **My Notes** (raw notes you type
 during the meeting, auto-saved). When a recording stops, Claude merges your raw notes

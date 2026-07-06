@@ -1,4 +1,84 @@
 import SwiftUI
+import AVFoundation
+import CoreGraphics
+
+/// One-glance health panel: are the permissions and keys this app needs in place?
+struct PermissionsHealthView: View {
+    @State private var micStatus: AVAuthorizationStatus = .notDetermined
+    @State private var screenGranted = false
+    @State private var hasDeepgramKey = false
+    @State private var hasAnthropicKey = false
+
+    var body: some View {
+        Section {
+            statusRow(ok: micStatus == .authorized,
+                      pending: micStatus == .notDetermined,
+                      title: "Microphone",
+                      detail: micStatus == .authorized ? "Granted"
+                            : micStatus == .notDetermined ? "Not requested yet — press Record once"
+                            : "Denied") {
+                openPrivacyPane("Privacy_Microphone")
+            }
+            statusRow(ok: screenGranted,
+                      pending: false,
+                      title: "Screen & System Audio Recording",
+                      detail: screenGranted ? "Granted"
+                            : "Not granted — needed to capture meeting audio (no video is recorded)") {
+                openPrivacyPane("Privacy_ScreenCapture")
+            }
+            statusRow(ok: hasDeepgramKey, pending: false,
+                      title: "Deepgram API key",
+                      detail: hasDeepgramKey ? "Saved in Keychain" : "Missing — add it below", action: nil)
+            statusRow(ok: hasAnthropicKey, pending: false,
+                      title: "Anthropic API key",
+                      detail: hasAnthropicKey ? "Saved in Keychain" : "Missing — add it below", action: nil)
+        } header: {
+            HStack {
+                Text("Health")
+                Spacer()
+                Button("Refresh") { refresh() }
+                    .font(.caption)
+            }
+        } footer: {
+            Text("A Screen Recording grant only takes effect after relaunching Oatmeal.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .onAppear { refresh() }
+    }
+
+    @ViewBuilder
+    private func statusRow(ok: Bool, pending: Bool, title: String, detail: String,
+                           action: (() -> Void)?) -> some View {
+        HStack {
+            Circle()
+                .fill(ok ? Color.green : pending ? Color.orange : Color.red)
+                .frame(width: 9, height: 9)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title)
+                Text(detail).font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer()
+            if !ok, let action {
+                Button("Open Settings", action: action)
+                    .font(.caption)
+            }
+        }
+    }
+
+    private func refresh() {
+        micStatus = AVCaptureDevice.authorizationStatus(for: .audio)
+        screenGranted = CGPreflightScreenCaptureAccess()
+        hasDeepgramKey = !(KeychainStore.get(.deepgram) ?? "").isEmpty
+        hasAnthropicKey = !(KeychainStore.get(.anthropic) ?? "").isEmpty
+    }
+
+    private func openPrivacyPane(_ pane: String) {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?\(pane)") {
+            NSWorkspace.shared.open(url)
+        }
+    }
+}
 
 struct SettingsView: View {
     @State private var deepgramKey = ""
@@ -22,6 +102,7 @@ struct SettingsView: View {
 
     var body: some View {
         Form {
+            PermissionsHealthView()
             Section("Deepgram (live transcription)") {
                 keyRow(key: $deepgramKey, status: deepgramStatus) {
                     validateDeepgram()

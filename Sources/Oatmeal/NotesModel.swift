@@ -82,11 +82,23 @@ final class NotesModel: ObservableObject {
                 let result = try await AIService.enhanceNotes(
                     userNotes: notes, transcript: transcript, template: template)
                 enhancedNotes = result
+                await autoTitleIfNeeded(userNotes: notes, transcript: transcript)
             } catch {
                 errorMessage = error.localizedDescription
             }
             isEnhancing = false
         }
+    }
+
+    /// Replace the default "Meeting <date>" title with an AI-generated one.
+    /// Never touches a title the user set themselves.
+    private func autoTitleIfNeeded(userNotes: String, transcript: String) async {
+        guard let meeting = try? Store.shared.meeting(id: meetingId),
+              meeting.title.hasPrefix(Meeting.defaultTitlePrefix) else { return }
+        guard let title = try? await AIService.generateTitle(
+            userNotes: userNotes, transcript: transcript), !title.isEmpty else { return }
+        try? Store.shared.updateTitle(meetingId: meetingId, title: title)
+        NotificationCenter.default.post(name: .meetingChanged, object: nil)
     }
 
     static func transcriptText(_ segments: [TranscriptSegment]) -> String {

@@ -14,14 +14,24 @@ struct Meeting: Identifiable, Codable, Equatable, FetchableRecord, PersistableRe
     var audioFilePath: String?
     /// NoteTemplate raw value used for AI enhancement.
     var template: String
+    /// JSON dict mapping speaker keys ("them0", "them1", …) to display names.
+    var speakerNames: String?
 
     static func new(title: String) -> Meeting {
         Meeting(id: UUID().uuidString, title: title, createdAt: Date())
     }
 
+    /// Auto-generated titles start with this; AI auto-titling only replaces those.
+    static let defaultTitlePrefix = "Meeting "
+
+    var speakerNameMap: [String: String] {
+        guard let data = speakerNames?.data(using: .utf8) else { return [:] }
+        return (try? JSONDecoder().decode([String: String].self, from: data)) ?? [:]
+    }
+
     init(id: String, title: String, createdAt: Date, endedAt: Date? = nil,
          calendarEventId: String? = nil, attendees: String? = nil, audioFilePath: String? = nil,
-         template: String = NoteTemplate.standard.rawValue) {
+         template: String = NoteTemplate.standard.rawValue, speakerNames: String? = nil) {
         self.id = id
         self.title = title
         self.createdAt = createdAt
@@ -30,7 +40,20 @@ struct Meeting: Identifiable, Codable, Equatable, FetchableRecord, PersistableRe
         self.attendees = attendees
         self.audioFilePath = audioFilePath
         self.template = template
+        self.speakerNames = speakerNames
     }
+}
+
+extension Notification.Name {
+    /// Posted after a meeting's title/speakers change outside the list's own actions.
+    static let meetingChanged = Notification.Name("oatmeal.meetingChanged")
+}
+
+/// Maps a Deepgram channel + diarized speaker index to our stored speaker key.
+func speakerKey(channel: Int, speakerIndex: Int?) -> String {
+    if channel == 0 { return "me" }
+    if let index = speakerIndex { return "them\(index)" }
+    return "them"
 }
 
 struct TranscriptSegment: Identifiable, Codable, Equatable, FetchableRecord, MutablePersistableRecord {

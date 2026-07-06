@@ -62,10 +62,14 @@ enum AIService {
             let role: String
             let content: String
         }
+        struct Thinking: Encodable {
+            let type: String
+        }
         let model: String
         let max_tokens: Int
         let system: String
         let messages: [Message]
+        let thinking: Thinking?
     }
 
     private struct MessagesResponse: Decodable {
@@ -83,7 +87,10 @@ enum AIService {
     }
 
     /// One-shot completion against the Messages API.
-    static func complete(system: String, user: String, maxTokens: Int = 16_000) async throws -> String {
+    /// `disableThinking` suits tiny deterministic outputs (titles) where adaptive
+    /// thinking would eat the token budget.
+    static func complete(system: String, user: String, maxTokens: Int = 16_000,
+                         disableThinking: Bool = false) async throws -> String {
         guard let key = KeychainStore.get(.anthropic), !key.isEmpty else {
             throw AIError.missingKey
         }
@@ -95,7 +102,8 @@ enum AIService {
         request.timeoutInterval = 300
         request.httpBody = try JSONEncoder().encode(MessagesRequest(
             model: model, max_tokens: maxTokens, system: system,
-            messages: [.init(role: "user", content: user)]))
+            messages: [.init(role: "user", content: user)],
+            thinking: disableThinking ? .init(type: "disabled") : nil))
 
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse else {
@@ -124,5 +132,19 @@ enum AIService {
             \(transcript.isEmpty ? "(no transcript)" : transcript)
             """
         return try await complete(system: template.systemPrompt, user: input)
+    }
+
+    /// Short descriptive title for the sidebar, replacing "Meeting Jul 6, 2:14 PM".
+    static func generateTitle(userNotes: String, transcript: String) async throws -> String {
+        let input = String("\(userNotes)\n\(transcript)".prefix(6_000))
+        let raw = try await complete(
+            system: "Generate a concise 3-6 word title for this meeting based on its notes and transcript. Output only the title itself — no quotes, no trailing punctuation, no explanation.",
+            user: input,
+            maxTokens: 100,
+            disableThinking: true)
+        let title = raw
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "\"'“”"))
+        return String(title.prefix(60))
     }
 }

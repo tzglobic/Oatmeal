@@ -2,87 +2,51 @@ import SwiftUI
 
 final class MeetingListModel: ObservableObject {
     @Published var meetings: [Meeting] = []
-    @Published var selection: Meeting.ID?
+    @Published var displayed: [Meeting] = []
+    @Published var selection: String?
+    @Published var searchText: String = "" {
+        didSet { applySearch() }
+    }
+
+    private var observer: NSObjectProtocol?
+
+    init() {
+        observer = NotificationCenter.default.addObserver(
+            forName: .meetingChanged, object: nil, queue: .main) { [weak self] _ in
+                self?.reload()
+            }
+    }
 
     func reload() {
         meetings = (try? Store.shared.allMeetings()) ?? []
+        applySearch()
+    }
+
+    private func applySearch() {
+        let query = searchText.trimmingCharacters(in: .whitespaces)
+        if query.isEmpty {
+            displayed = meetings
+        } else {
+            displayed = (try? Store.shared.searchMeetings(query)) ?? []
+        }
     }
 }
 
 struct ContentView: View {
     @EnvironmentObject var model: MeetingListModel
     @EnvironmentObject var recorder: RecordingController
+    @State private var renameTarget: Meeting?
+    @State private var renameText = ""
+
+    static let actionItemsID = "__action_items__"
 
     var body: some View {
         NavigationSplitView {
-            List(selection: $model.selection) {
-                if model.meetings.isEmpty {
-                    Text("No meetings yet")
-                        .foregroundStyle(.secondary)
-                } else {
-                    ForEach(model.meetings) { meeting in
-                        HStack {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(meeting.title)
-                                    .lineLimit(1)
-                                Text(meeting.createdAt, style: .date)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                            if recorder.isRecording && recorder.activeMeeting?.id == meeting.id {
-                                Spacer()
-                                Image(systemName: "record.circle.fill")
-                                    .foregroundStyle(.red)
-                                    .font(.caption)
-                            }
-                        }
-                        .tag(meeting.id)
-                        .contextMenu {
-                            Button("Delete Meeting", role: .destructive) {
-                                deleteMeeting(meeting)
-                            }
-                            .disabled(recorder.isRecording && recorder.activeMeeting?.id == meeting.id)
-                        }
-                    }
-                }
-            }
-            .navigationSplitViewColumnWidth(min: 200, ideal: 240)
-            .navigationTitle("Meetings")
+            sidebar
         } detail: {
-            if let id = model.selection,
-               let meeting = model.meetings.first(where: { $0.id == id }) {
-                MeetingDetailView(meeting: meeting)
-                    .id(meeting.id) // fresh notes state per meeting
-            } else {
-                ContentUnavailableView(
-                    "Select a meeting",
-                    systemImage: "text.bubble",
-                    description: Text("Press Record to capture a meeting, or set API keys in Settings (⌘,).")
-                )
-            }
+            detail
         }
-        .toolbar {
-            ToolbarItem(placement: .status) {
-                if recorder.isRecording && !recorder.connectionStatus.isEmpty {
-                    Text(recorder.connectionStatus)
-                        .font(.caption)
-                        .foregroundStyle(recorder.connectionStatus == "Live" ? .green : .orange)
-                }
-            }
-            ToolbarItem(placement: .primaryAction) {
-                Button {
-                    recorder.toggle()
-                } label: {
-                    if recorder.isRecording {
-                        Label("Stop", systemImage: "stop.circle.fill")
-                            .foregroundStyle(.red)
-                    } else {
-                        Label("Record", systemImage: "record.circle")
-                    }
-                }
-                .help(recorder.isRecording ? "Stop recording" : "Start recording a meeting")
-            }
-        }
+        .toolbar { toolbarContent }
         .onAppear { model.reload() }
         .onChange(of: recorder.activeMeeting?.id) { _, newValue in
             model.reload()
@@ -107,6 +71,159 @@ struct ContentView: View {
         } message: {
             Text(recorder.warning ?? "")
         }
+        .alert("Rename Meeting", isPresented: Binding(
+            get: { renameTarget != nil },
+            set: { if !$0 { renameTarget = nil } }
+        )) {
+            TextField("Title", text: $renameText)
+            Button("Save") { commitRename() }
+            Button("Cancel", role: .cancel) { renameTarget = nil }
+        }
+    }
+
+    // MARK: - Sidebar
+
+    private var sidebar: some View {
+        List(selection: $model.selection) {
+            if model.searchText.isEmpty {
+                Label("Action Items", systemImage: "checklist")
+                    .tag(Self.actionItemsID)
+            }
+            Section("Meetings") {
+                if model.displayed.isEmpty {
+                    Text(model.searchText.isEmpty ? "No meetings yet" : "No matches")
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(model.displayed) { meeting in
+                        meetingRow(meeting)
+                    }
+                }
+            }
+        }
+        .navigationSplitViewColumnWidth(min: 200, ideal: 240)
+        .navigationTitle("Meetings")
+        .searchable(text: $model.searchText, placement: .sidebar,
+                    prompt: "Search meetings, transcripts, notes")
+    }
+
+    private func meetingRow(_ meeting: Meeting) -> some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(meeting.title)
+                    .lineLimit(1)
+                Text(meeting.createdAt, style: .date)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            if recorder.isRecording && recorder.activeMeeting?.id == meeting.id {
+                Spacer()
+                Image(systemName: "record.circle.fill")
+                    .foregroundStyle(.red)
+                    .font(.caption)
+            }
+        }
+        .tag(meeting.id)
+        .contextMenu {
+            Button("Rename…") {
+                renameText = meeting.title
+                renameTarget = meeting
+            }
+            Divider()
+            Button("Delete Meeting", role: .destructive) {
+                deleteMeeting(meeting)
+            }
+            .disabled(recorder.isRecording && recorder.activeMeeting?.id == meeting.id)
+        }
+    }
+
+    // MARK: - Detail
+
+    @ViewBuilder
+    private var detail: some View {
+        if model.selection == Self.actionItemsID {
+            ActionItemsView { meetingId in
+                model.selection = meetingId
+            }
+        } else if let id = model.selection,
+                  let meeting = model.meetings.first(where: { $0.id == id }) {
+            MeetingDetailView(meeting: meeting)
+                .id(meeting.id) // fresh notes state per meeting
+        } else {
+            ContentUnavailableView(
+                "Select a meeting",
+                systemImage: "text.bubble",
+                description: Text("Press Record to capture a meeting, or set API keys in Settings (⌘,).")
+            )
+        }
+    }
+
+    // MARK: - Toolbar
+
+    @ToolbarContentBuilder
+    private var toolbarContent: some ToolbarContent {
+        ToolbarItem(placement: .status) {
+            if recorder.isRecording {
+                HStack(spacing: 12) {
+                    LevelMeter(label: "Mic", level: recorder.micLevel)
+                    LevelMeter(label: "Sys", level: recorder.systemLevel)
+                    if let start = recorder.recordingStart {
+                        TimelineView(.periodic(from: .now, by: 1)) { context in
+                            Text(Self.elapsedString(from: start, to: context.date))
+                                .font(.caption.monospacedDigit())
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    if !recorder.connectionStatus.isEmpty {
+                        Text(recorder.connectionStatus)
+                            .font(.caption)
+                            .foregroundStyle(recorder.connectionStatus == "Live" ? .green : .orange)
+                    }
+                }
+            }
+        }
+        ToolbarItem(placement: .primaryAction) {
+            if recorder.isRecording {
+                Button {
+                    recorder.togglePause()
+                } label: {
+                    Label(recorder.isPaused ? "Resume" : "Pause",
+                          systemImage: recorder.isPaused ? "play.circle" : "pause.circle")
+                }
+                .help(recorder.isPaused ? "Resume recording" : "Pause recording (audio is muted, the clock keeps running)")
+            }
+        }
+        ToolbarItem(placement: .primaryAction) {
+            Button {
+                recorder.toggle()
+            } label: {
+                if recorder.isRecording {
+                    Label("Stop", systemImage: "stop.circle.fill")
+                        .foregroundStyle(.red)
+                } else {
+                    Label("Record", systemImage: "record.circle")
+                }
+            }
+            .help(recorder.isRecording ? "Stop recording" : "Start recording a meeting")
+        }
+    }
+
+    private static func elapsedString(from start: Date, to now: Date) -> String {
+        let total = max(0, Int(now.timeIntervalSince(start)))
+        if total >= 3600 {
+            return String(format: "%d:%02d:%02d", total / 3600, (total % 3600) / 60, total % 60)
+        }
+        return String(format: "%d:%02d", total / 60, total % 60)
+    }
+
+    // MARK: - Actions
+
+    private func commitRename() {
+        guard let meeting = renameTarget else { return }
+        let trimmed = renameText.trimmingCharacters(in: .whitespacesAndNewlines)
+        renameTarget = nil
+        guard !trimmed.isEmpty, trimmed != meeting.title else { return }
+        try? Store.shared.updateTitle(meetingId: meeting.id, title: trimmed)
+        model.reload()
     }
 
     private func deleteMeeting(_ meeting: Meeting) {
@@ -117,5 +234,30 @@ struct ContentView: View {
         }
         if model.selection == meeting.id { model.selection = nil }
         model.reload()
+    }
+}
+
+/// Tiny live audio level bar shown in the toolbar while recording, so silent
+/// capture failures are visible at a glance.
+struct LevelMeter: View {
+    let label: String
+    let level: Float
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Text(label)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            ZStack(alignment: .leading) {
+                Capsule()
+                    .fill(Color.secondary.opacity(0.25))
+                    .frame(width: 50, height: 6)
+                Capsule()
+                    .fill(level > 0.02 ? Color.green : Color.secondary.opacity(0.4))
+                    .frame(width: max(2, 50 * CGFloat(min(level, 1))), height: 6)
+                    .animation(.linear(duration: 0.1), value: level)
+            }
+        }
+        .help("\(label) audio level — if this never moves, that source isn't being captured")
     }
 }

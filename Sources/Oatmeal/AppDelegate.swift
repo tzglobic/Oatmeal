@@ -47,8 +47,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 let event = CalendarService.shared.upcoming.first { $0.id == meetingId }
                 await RecordingController.shared.start(calendarMeeting: event)
             }
-            completionHandler()
         }
+        // Must be called promptly — start() above can block on permission prompts.
+        completionHandler()
     }
 
     static func writeCrashLog(_ text: String) {

@@ -38,6 +38,11 @@ struct MeetingDetailView: View {
         isActive ? recorder.liveSegments : storedSegments
     }
 
+    private var audioFileExists: Bool {
+        guard let path = meeting.audioFilePath else { return false }
+        return FileManager.default.fileExists(atPath: path)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
@@ -69,10 +74,12 @@ struct MeetingDetailView: View {
                 }
             } else {
                 loadSegments()
-                // Auto-enhance the meeting that just finished recording.
                 if recorder.activeMeeting?.id == meeting.id {
+                    // The .m4a is finalized now — make playback pick it up.
+                    playback.load(path: meeting.audioFilePath)
+                    // Auto-enhance the meeting that just finished recording.
                     tab = .notes
-                    notes.enhance()
+                    notes.enhance(auto: true)
                 }
             }
         }
@@ -155,7 +162,7 @@ struct MeetingDetailView: View {
 
                 Menu {
                     Button("Re-transcribe from Audio") { retranscribe() }
-                        .disabled(isActive || isRetranscribing || !playback.available)
+                        .disabled(isActive || isRetranscribing || !audioFileExists)
                 } label: {
                     Image(systemName: "ellipsis.circle")
                 }

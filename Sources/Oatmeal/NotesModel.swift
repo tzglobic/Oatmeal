@@ -64,12 +64,16 @@ final class NotesModel: ObservableObject {
 
     var canEnhance: Bool { !isEnhancing }
 
-    func enhance() {
+    /// `auto` marks the automatic post-recording invocation: an empty meeting is
+    /// then a silent no-op rather than an error the user never asked about.
+    func enhance(auto: Bool = false) {
         guard !isEnhancing else { return }
         let segments = (try? Store.shared.segments(for: meetingId)) ?? []
         let hasNotes = !userNotes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         guard !segments.isEmpty || hasNotes else {
-            errorMessage = "Nothing to enhance yet — record the meeting or type some notes first."
+            if !auto {
+                errorMessage = "Nothing to enhance yet — record the meeting or type some notes first."
+            }
             return
         }
         isEnhancing = true
@@ -82,6 +86,7 @@ final class NotesModel: ObservableObject {
                 let result = try await AIService.enhanceNotes(
                     userNotes: notes, transcript: transcript, template: template)
                 enhancedNotes = result
+                flush() // persist now — don't risk losing the result to the debounce window
                 await autoTitleIfNeeded(userNotes: notes, transcript: transcript)
             } catch {
                 errorMessage = error.localizedDescription

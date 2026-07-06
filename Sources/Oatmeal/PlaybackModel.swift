@@ -16,6 +16,15 @@ final class PlaybackModel: ObservableObject {
     var duration: Double { player?.duration ?? 0 }
 
     init(path: String?) {
+        load(path: path)
+    }
+
+    /// (Re)open the audio file. Needed after a recording stops: the .m4a isn't
+    /// finalized until then, so a player created mid-recording is nil or stale.
+    func load(path: String?) {
+        pause()
+        player = nil
+        currentTime = 0
         if let path, FileManager.default.fileExists(atPath: path),
            let player = try? AVAudioPlayer(contentsOf: URL(fileURLWithPath: path)) {
             player.prepareToPlay()

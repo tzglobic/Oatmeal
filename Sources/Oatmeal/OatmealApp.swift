@@ -7,7 +7,7 @@ struct OatmealApp: App {
     @StateObject private var recorder = RecordingController.shared
 
     var body: some Scene {
-        WindowGroup {
+        WindowGroup(id: "main") {
             ContentView()
                 .environmentObject(store)
                 .environmentObject(recorder)
@@ -17,25 +17,36 @@ struct OatmealApp: App {
             SettingsView()
         }
         MenuBarExtra {
-            if recorder.isRecording {
-                Button("Stop Recording") { recorder.toggle() }
-                Button(recorder.isPaused ? "Resume Recording" : "Pause Recording") {
-                    recorder.togglePause()
-                }
-            } else {
-                Button("Start Recording") { recorder.toggle() }
-            }
-            Divider()
-            Button("Open Oatmeal") {
-                NSApp.activate(ignoringOtherApps: true)
-                NSApp.windows.first(where: { $0.canBecomeKey })?.makeKeyAndOrderFront(nil)
-            }
-            Divider()
-            Button("Quit Oatmeal") { NSApp.terminate(nil) }
+            MenuBarContent(recorder: recorder)
         } label: {
             Image(systemName: recorder.isRecording
                   ? (recorder.isPaused ? "pause.circle.fill" : "record.circle.fill")
                   : "waveform.circle")
         }
+    }
+}
+
+/// Menu bar content lives in its own view so it can use @Environment(\.openWindow)
+/// — plain NSApp.activate can't recreate the main window once it's been closed.
+private struct MenuBarContent: View {
+    @ObservedObject var recorder: RecordingController
+    @Environment(\.openWindow) private var openWindow
+
+    var body: some View {
+        if recorder.isRecording {
+            Button("Stop Recording") { recorder.toggle() }
+            Button(recorder.isPaused ? "Resume Recording" : "Pause Recording") {
+                recorder.togglePause()
+            }
+        } else {
+            Button("Start Recording") { recorder.toggle() }
+        }
+        Divider()
+        Button("Open Oatmeal") {
+            openWindow(id: "main")
+            NSApp.activate(ignoringOtherApps: true)
+        }
+        Divider()
+        Button("Quit Oatmeal") { NSApp.terminate(nil) }
     }
 }

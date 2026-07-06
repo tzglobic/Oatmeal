@@ -53,10 +53,9 @@ final class RecordingController: ObservableObject {
             lastError = "Add your Deepgram API key in Settings (⌘,) before recording."
             return
         }
-        guard await AVCaptureDevice.requestAccess(for: .audio) else {
-            lastError = "Microphone access denied. Enable it in System Settings → Privacy & Security → Microphone."
-            return
-        }
+        // Mic permission denial must not abort the session — system-audio-only
+        // recording is still valid (and the only mode on Macs without a mic).
+        let micPermitted = await AVCaptureDevice.requestAccess(for: .audio)
         let screenCapturePreflightGranted = CGPreflightScreenCaptureAccess()
         if !screenCapturePreflightGranted {
             // This registers Oatmeal in System Settings. Do not return here:
@@ -67,7 +66,7 @@ final class RecordingController: ObservableObject {
         }
 
         let event = calendarMeeting ?? CalendarService.shared.currentMeeting()
-        var title = "Meeting \(Self.titleFormatter.string(from: Date()))"
+        var title = Meeting.defaultTitlePrefix + Self.titleFormatter.string(from: Date())
         if let eventTitle = event?.title.trimmingCharacters(in: .whitespaces), !eventTitle.isEmpty {
             title = eventTitle
         }
@@ -130,28 +129,28 @@ final class RecordingController: ObservableObject {
             await system.stop()
             warning = systemAudioStartMessage(error: error, preflightGranted: screenCapturePreflightGranted)
         }
-        do {
-            try mic.start()
-            micStarted = true
-        } catch {
-            if warning == nil {
-                warning = "Recording meeting audio only — no microphone is available, so your own voice won't be transcribed."
-            } else {
-                pipeline.stop()
-                try? Store.shared.delete(meeting)
-                lastError = """
-                    Couldn't start recording.
-
-                    System audio: unavailable.
-                    Microphone: no usable microphone was found.
-                    """
-                return
+        if micPermitted {
+            do {
+                try mic.start()
+                micStarted = true
+            } catch {
+                if warning == nil {
+                    warning = "Recording meeting audio only — no microphone is available, so your own voice won't be transcribed."
+                }
             }
+        } else if warning == nil {
+            warning = "Recording meeting audio only — microphone access is denied (System Settings → Privacy & Security → Microphone)."
         }
         guard systemStarted || micStarted else {
             pipeline.stop()
             try? Store.shared.delete(meeting)
-            lastError = "Couldn't start recording: no audio source was available."
+            lastError = """
+                Couldn't start recording — no audio source was available.
+
+                System audio: \(warning ?? "unavailable")
+                Microphone: \(micPermitted ? "no usable microphone was found." : "access denied.")
+                """
+            warning = nil
             return
         }
         streamer.connect()

@@ -60,7 +60,14 @@ final class ActionItemsModel: ObservableObject {
     func toggle(_ item: ActionItem) {
         guard let note = try? Store.shared.note(for: item.meetingId, kind: "enhanced") else { return }
         var lines = note.content.components(separatedBy: "\n")
-        guard lines.indices.contains(item.lineIndex) else { reload(); return }
+        // The note may have been re-enhanced or edited since this list loaded —
+        // verify the line still holds this exact item before writing back.
+        guard lines.indices.contains(item.lineIndex),
+              let current = Self.parseCheckbox(lines[item.lineIndex]),
+              current.text == item.text, current.done == item.done else {
+            reload()
+            return
+        }
         let line = lines[item.lineIndex]
         lines[item.lineIndex] = item.done
             ? line.replacingOccurrences(of: "[x]", with: "[ ]")

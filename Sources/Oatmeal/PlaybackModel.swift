@@ -38,6 +38,11 @@ final class PlaybackModel: ObservableObject {
 
     func play() {
         guard let player else { return }
+        // If playback finished, restart from the beginning instead of no-op'ing.
+        if player.currentTime >= player.duration - 0.2 {
+            player.currentTime = 0
+            currentTime = 0
+        }
         player.play()
         isPlaying = true
         startTimer()

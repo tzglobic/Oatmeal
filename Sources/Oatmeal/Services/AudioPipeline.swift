@@ -15,6 +15,7 @@ final class AudioPipeline {
     private var systemBuffer: [Int16] = []
     private var paused = false
     private let lock = NSLock()
+    private let queue = DispatchQueue(label: "oatmeal.pipeline")
     private var timer: DispatchSourceTimer?
     private var audioFile: AVAudioFile?
 
@@ -53,7 +54,7 @@ final class AudioPipeline {
             commonFormat: .pcmFormatInt16,
             interleaved: true)
 
-        let t = DispatchSource.makeTimerSource(queue: DispatchQueue(label: "oatmeal.pipeline"))
+        let t = DispatchSource.makeTimerSource(queue: queue)
         t.schedule(deadline: .now() + .milliseconds(100), repeating: .milliseconds(100))
         t.setEventHandler { [weak self] in self?.drain() }
         t.resume()
@@ -63,7 +64,9 @@ final class AudioPipeline {
     func stop() {
         timer?.cancel()
         timer = nil
-        audioFile = nil // AVAudioFile finalizes on dealloc
+        // Finalize the .m4a on the same queue drain() uses, so we never nil the
+        // file out from under an in-flight write. AVAudioFile flushes on dealloc.
+        queue.async { [self] in audioFile = nil }
     }
 
     /// While paused, both channels emit silence — the Deepgram timeline and the

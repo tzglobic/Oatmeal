@@ -79,7 +79,8 @@ final class NotesModel: ObservableObject {
         isEnhancing = true
         errorMessage = nil
         let notes = userNotes
-        let transcript = Self.transcriptText(segments)
+        let names = (try? Store.shared.meeting(id: meetingId))?.speakerNameMap ?? [:]
+        let transcript = Self.transcriptText(segments, names: names)
         let template = template
         Task {
             do {
@@ -108,10 +109,14 @@ final class NotesModel: ObservableObject {
         NotificationCenter.default.post(name: .meetingChanged, object: nil)
     }
 
-    static func transcriptText(_ segments: [TranscriptSegment]) -> String {
+    /// Plain-text transcript with speaker labels and timestamps. Passing the
+    /// meeting's speaker-name map keeps assigned names (and Them 1/Them 2
+    /// diarization) instead of flattening everyone to "Them".
+    static func transcriptText(_ segments: [TranscriptSegment],
+                               names: [String: String] = [:]) -> String {
         segments.map { segment in
             let t = Int(segment.startTime)
-            let speaker = segment.speaker == "me" ? "Me" : "Them"
+            let speaker = speakerDisplayName(key: segment.speaker, names: names)
             return String(format: "[%@ %d:%02d] %@", speaker, t / 60, t % 60, segment.text)
         }.joined(separator: "\n")
     }

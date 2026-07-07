@@ -336,11 +336,7 @@ struct MeetingDetailView: View {
     // MARK: - Speakers
 
     private func displayName(for key: String) -> String {
-        if key == "me" { return "Me" }
-        if let custom = speakerNames[key], !custom.isEmpty { return custom }
-        if key == "them" { return "Them" }
-        if key.hasPrefix("them"), let n = Int(key.dropFirst(4)) { return "Them \(n + 1)" }
-        return key
+        speakerDisplayName(key: key, names: speakerNames)
     }
 
     private func speakerColor(_ key: String) -> Color {
@@ -400,7 +396,7 @@ struct MeetingDetailView: View {
         let text: String
         switch tab {
         case .notes: text = notes.enhancedNotes
-        case .transcript: text = NotesModel.transcriptText(segments)
+        case .transcript: text = NotesModel.transcriptText(segments, names: speakerNames)
         case .myNotes: text = notes.userNotes
         }
         guard !text.isEmpty else { return }

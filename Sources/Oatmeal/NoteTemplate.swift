@@ -3,6 +3,7 @@ import Foundation
 /// Enhancement templates — each is just a different system prompt, Granola-style.
 enum NoteTemplate: String, CaseIterable, Identifiable {
     case standard
+    case interview
     case oneOnOne
     case sales
     case standup
@@ -12,6 +13,7 @@ enum NoteTemplate: String, CaseIterable, Identifiable {
     var displayName: String {
         switch self {
         case .standard: return "Standard"
+        case .interview: return "Interview"
         case .oneOnOne: return "1:1"
         case .sales: return "Sales Call"
         case .standup: return "Standup"
@@ -42,6 +44,26 @@ enum NoteTemplate: String, CaseIterable, Identifiable {
                 ## Key Points — the substance, grouped by topic; fold the user's bullets in here.
                 ## Decisions — decisions actually made (omit the section if none).
                 ## Action Items — checkbox list; include owner and deadline when mentioned (omit if none).
+                """
+        case .interview:
+            return Self.preamble + """
+
+
+                This was a candidate interview or screening conversation.
+
+                Use only evidence from the raw notes and transcript. Do not infer or
+                evaluate protected characteristics, personal background, age, health,
+                family status, nationality, accent, or anything not directly relevant
+                to the role. If evidence is thin, say so clearly.
+
+                Structure:
+                ## Candidate Snapshot — role/context if mentioned; current situation and motivation.
+                ## Summary — 2-4 sentences on the conversation and overall signal.
+                ## Key Discussion Areas — grouped by topic, including experience, skills, role expectations, and candidate questions.
+                ## Strengths — evidence-backed positives; include short supporting examples.
+                ## Concerns / Risks — evidence-backed gaps, ambiguities, or follow-up areas (omit if none).
+                ## Initial Evaluation — concise recommendation such as Strong Yes / Yes / Mixed / No, with 2-3 bullets explaining the rationale. Frame it as an initial signal, not a final hiring decision.
+                ## Follow-ups — checkbox list for references, clarification questions, take-home tasks, scheduling, or interviewer actions (omit if none).
                 """
         case .oneOnOne:
             return Self.preamble + """

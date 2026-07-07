@@ -27,6 +27,7 @@ final class RecordingController: ObservableObject {
     private var system: SystemAudioCapture?
     private var pipeline: AudioPipeline?
     private var streamer: DeepgramStreamer?
+    private var isStopping = false
 
     private static let titleFormatter: DateFormatter = {
         let f = DateFormatter()
@@ -190,6 +191,10 @@ final class RecordingController: ObservableObject {
     }
 
     func stop() async {
+        // stop() awaits a 1.5s flush during which isRecording stays true; guard
+        // against a second Stop press (or menu-bar/notification path) re-entering.
+        guard !isStopping else { return }
+        isStopping = true
         streamer?.stop()
         mic?.stop()
         await system?.stop()
@@ -216,6 +221,7 @@ final class RecordingController: ObservableObject {
         recordingStart = nil
         isPaused = false
         isRecording = false
+        isStopping = false
     }
 
     // MARK: - Transcript handling

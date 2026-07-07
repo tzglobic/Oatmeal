@@ -61,6 +61,16 @@ func speakerKey(channel: Int, speakerIndex: Int?) -> String {
     return "them"
 }
 
+/// Human-facing label for a speaker key, honoring user/AI-assigned names.
+/// Single source of truth for the transcript view, copy, and enhancement input.
+func speakerDisplayName(key: String, names: [String: String]) -> String {
+    if key == "me" { return "Me" }
+    if let custom = names[key], !custom.isEmpty { return custom }
+    if key == "them" { return "Them" }
+    if key.hasPrefix("them"), let n = Int(key.dropFirst(4)) { return "Them \(n + 1)" }
+    return key
+}
+
 struct TranscriptSegment: Identifiable, Codable, Equatable, FetchableRecord, MutablePersistableRecord {
     static let databaseTableName = "transcript_segments"
 

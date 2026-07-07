@@ -140,15 +140,21 @@ final class Store {
     /// Case-insensitive substring search across titles, transcripts, and notes.
     /// LIKE is plenty at personal scale; swap for FTS5 when Phase 4 chat needs it.
     func searchMeetings(_ query: String) throws -> [Meeting] {
-        let pattern = "%\(query)%"
+        // Escape LIKE metacharacters so a literal % or _ in the query isn't
+        // treated as a wildcard.
+        let escaped = query
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "%", with: "\\%")
+            .replacingOccurrences(of: "_", with: "\\_")
+        let pattern = "%\(escaped)%"
         return try dbQueue.read { db in
             try Meeting.fetchAll(db, sql: """
                 SELECT DISTINCT meetings.* FROM meetings
                 LEFT JOIN transcript_segments ON transcript_segments.meetingId = meetings.id
                 LEFT JOIN notes ON notes.meetingId = meetings.id
-                WHERE meetings.title LIKE :p
-                   OR transcript_segments.text LIKE :p
-                   OR notes.content LIKE :p
+                WHERE meetings.title LIKE :p ESCAPE '\\'
+                   OR transcript_segments.text LIKE :p ESCAPE '\\'
+                   OR notes.content LIKE :p ESCAPE '\\'
                 ORDER BY meetings.createdAt DESC
                 """, arguments: ["p": pattern])
         }

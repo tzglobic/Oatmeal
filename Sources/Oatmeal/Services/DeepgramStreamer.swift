@@ -65,7 +65,6 @@ final class DeepgramStreamer: NSObject, URLSessionWebSocketDelegate {
             .init(name: "endpointing", value: "300"),
             // Split multiple remote speakers within the system-audio channel.
             .init(name: "diarize", value: "true"),
-            .init(name: "diarize_model", value: "latest"),
         ]
         var request = URLRequest(url: components.url!)
         request.setValue("Token \(apiKey)", forHTTPHeaderField: "Authorization")

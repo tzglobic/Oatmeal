@@ -63,7 +63,6 @@ enum TranscriptionService {
             .init(name: "multichannel", value: "true"),
             .init(name: "utterances", value: "true"),
             .init(name: "diarize", value: "true"),
-            .init(name: "diarize_model", value: "latest"),
         ]
         var request = URLRequest(url: components.url!)
         request.httpMethod = "POST"

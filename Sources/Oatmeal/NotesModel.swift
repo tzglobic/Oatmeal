@@ -88,6 +88,8 @@ final class NotesModel: ObservableObject {
                 enhancedNotes = result
                 flush() // persist now — don't risk losing the result to the debounce window
                 await autoTitleIfNeeded(userNotes: notes, transcript: transcript)
+                // Best-effort: put real names on the "Them" speakers.
+                _ = try? await SpeakerIdentifier.identify(meetingId: meetingId)
             } catch {
                 errorMessage = error.localizedDescription
             }

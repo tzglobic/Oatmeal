@@ -6,6 +6,14 @@ chat, briefs, and recipes. Full roadmap: [granola-clone-plan.md](granola-clone-p
 
 ## Status
 
+**Speaker identification — done.**
+Diarized "Them" speakers can be named: click a speaker label in the Transcript to
+rename it, or open **⋯ → Speakers…** for a panel listing every detected speaker (with a
+sample of what they said), a name field, quick-pick from the meeting's calendar
+attendees, and **Identify with AI** — which infers names from self-introductions and how
+people address each other, matched against the attendee list. Identification also runs
+automatically after a recording is enhanced. Manual names are never overwritten.
+
 **Phase 3 (calendar integration — Outlook/Teams) — done.**
 An **Up Next** sidebar section lists today's and tomorrow's calendar events (read via
 EventKit) with a **Join** button for detected video-call links — **Teams**

@@ -134,6 +134,46 @@ enum AIService {
         return try await complete(system: template.systemPrompt, user: input)
     }
 
+    /// Infers real names for diarized "them*" speakers from the transcript
+    /// (self-introductions, how participants address each other), preferring
+    /// matches against the calendar attendee list. Returns speakerKey → name;
+    /// uncertain speakers are omitted.
+    static func identifySpeakers(transcript: String, attendees: [String]) async throws -> [String: String] {
+        let attendeeLine = attendees.isEmpty
+            ? "(no attendee list available)"
+            : attendees.joined(separator: ", ")
+        let input = """
+            Attendees: \(attendeeLine)
+
+            Transcript (each line is prefixed with its speaker key):
+            \(String(transcript.prefix(24_000)))
+            """
+        let raw = try await complete(
+            system: """
+                You identify meeting speakers. The transcript labels each line with a \
+                speaker key: "me" is the note-taker, and "them", "them0", "them1", … are \
+                other participants. Infer the real name of each them-key from \
+                self-introductions ("hi, it's Sarah"), how others address them \
+                ("thanks, John"), and context. When an attendee list is provided, prefer \
+                matching to those exact names. Output ONLY a JSON object mapping speaker \
+                keys to names, e.g. {"them0": "Sarah Chen", "them1": "John Doe"}. \
+                Include only speakers you are reasonably confident about — omit the \
+                rest. If nothing can be inferred, output {}.
+                """,
+            user: input,
+            maxTokens: 400,
+            disableThinking: true)
+
+        // Tolerate stray prose or code fences around the JSON object.
+        guard let start = raw.firstIndex(of: "{"), let end = raw.lastIndex(of: "}"),
+              start < end,
+              let data = String(raw[start...end]).data(using: .utf8),
+              let mapping = try? JSONDecoder().decode([String: String].self, from: data) else {
+            return [:]
+        }
+        return mapping
+    }
+
     /// Short descriptive title for the sidebar, replacing "Meeting Jul 6, 2:14 PM".
     static func generateTitle(userNotes: String, transcript: String) async throws -> String {
         let input = String("\(userNotes)\n\(transcript)".prefix(6_000))

@@ -14,6 +14,7 @@ struct MeetingDetailView: View {
     @State private var isRetranscribing = false
     @State private var renameSpeakerKey: String?
     @State private var renameSpeakerText = ""
+    @State private var showSpeakersSheet = false
 
     enum Tab: String, CaseIterable, Identifiable {
         case notes = "Notes"
@@ -81,6 +82,11 @@ struct MeetingDetailView: View {
                     tab = .notes
                     notes.enhance(auto: true)
                 }
+            }
+        }
+        .sheet(isPresented: $showSpeakersSheet) {
+            SpeakersSheet(meetingId: meeting.id, attendees: meeting.attendeesList) {
+                speakerNames = (try? Store.shared.meeting(id: meeting.id))?.speakerNameMap ?? speakerNames
             }
         }
         .alert("Rename Speaker", isPresented: Binding(
@@ -161,6 +167,8 @@ struct MeetingDetailView: View {
                 .help("Copy this tab's content to the clipboard")
 
                 Menu {
+                    Button("Speakers…") { showSpeakersSheet = true }
+                        .disabled(isActive)
                     Button("Re-transcribe from Audio") { retranscribe() }
                         .disabled(isActive || isRetranscribing || !audioFileExists)
                 } label: {
@@ -284,7 +292,11 @@ struct MeetingDetailView: View {
                                       time: segment.startTime,
                                       isInterim: false,
                                       isCurrent: playback.isCurrent(start: segment.startTime,
-                                                                    end: segment.endTime))
+                                                                    end: segment.endTime),
+                                      onSpeakerTap: segment.speaker == "me" ? nil : {
+                                          renameSpeakerText = speakerNames[segment.speaker] ?? ""
+                                          renameSpeakerKey = segment.speaker
+                                      })
                             .contentShape(Rectangle())
                             .onTapGesture {
                                 guard playback.available, !isActive else { return }
@@ -296,6 +308,7 @@ struct MeetingDetailView: View {
                                         renameSpeakerText = speakerNames[segment.speaker] ?? ""
                                         renameSpeakerKey = segment.speaker
                                     }
+                                    Button("All Speakers…") { showSpeakersSheet = true }
                                 }
                             }
                     }
@@ -305,7 +318,8 @@ struct MeetingDetailView: View {
                                 TranscriptRow(speakerLabel: channel == 0 ? "Me" : "Them",
                                               speakerColor: channel == 0 ? .blue : .purple,
                                               text: text, time: nil,
-                                              isInterim: true, isCurrent: false)
+                                              isInterim: true, isCurrent: false,
+                                              onSpeakerTap: nil)
                             }
                         }
                         Color.clear.frame(height: 1).id("bottom")
@@ -408,14 +422,26 @@ struct TranscriptRow: View {
     let time: Double?
     let isInterim: Bool
     let isCurrent: Bool
+    var onSpeakerTap: (() -> Void)?
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
-            Text(speakerLabel)
-                .font(.caption.bold())
-                .foregroundStyle(speakerColor)
-                .frame(width: 70, alignment: .trailing)
-                .lineLimit(1)
+            Group {
+                if let onSpeakerTap {
+                    Button(action: onSpeakerTap) {
+                        Text(speakerLabel).underline(pattern: .dot)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Click to rename this speaker")
+                } else {
+                    Text(speakerLabel)
+                }
+            }
+            .font(.caption.bold())
+            .foregroundStyle(speakerColor)
+            .frame(width: 90, alignment: .trailing)
+            .lineLimit(1)
+            .truncationMode(.tail)
             Text(text)
                 .textSelection(.enabled)
                 .opacity(isInterim ? 0.5 : 1)

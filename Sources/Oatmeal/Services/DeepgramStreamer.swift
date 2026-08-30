@@ -37,6 +37,8 @@ final class DeepgramStreamer: NSObject, URLSessionWebSocketDelegate {
     private var connectionOffset: Double = 0
 
     private let maxPendingChunks = 600 // ~60s of audio buffered while disconnected
+    /// Wall-clock duration of one chunk from AudioPipeline (1600 frames @ 16kHz).
+    private let chunkDuration = 0.1
 
     init(apiKey: String, recordingStart: Date) {
         self.apiKey = apiKey
@@ -108,9 +110,17 @@ final class DeepgramStreamer: NSObject, URLSessionWebSocketDelegate {
     }
 
     private func sendRaw(_ data: Data) {
-        task?.send(.data(data)) { [weak self] error in
+        currentTask()?.send(.data(data)) { [weak self] error in
             if error != nil { self?.handleDisconnect() }
         }
+    }
+
+    /// `task` is written under the lock by handleDisconnect/connect, and read
+    /// from the send path and the keepalive timer — both off the delegate queue.
+    private func currentTask() -> URLSessionWebSocketTask? {
+        lock.lock()
+        defer { lock.unlock() }
+        return task
     }
 
     // MARK: - Receiving
@@ -158,12 +168,16 @@ final class DeepgramStreamer: NSObject, URLSessionWebSocketDelegate {
         let speakerIndex = Dictionary(grouping: speakers, by: { $0 })
             .max { $0.value.count < $1.value.count }?.key
 
+        lock.lock()
+        let offset = connectionOffset
+        lock.unlock()
+
         let segment = Segment(
             channel: channel,
             speakerIndex: speakerIndex,
             text: alternative.transcript.trimmingCharacters(in: .whitespaces),
-            start: connectionOffset + start,
-            end: connectionOffset + start + (response.duration ?? 0),
+            start: offset + start,
+            end: offset + start + (response.duration ?? 0),
             isFinal: response.is_final ?? false)
         onSegment?(segment)
     }
@@ -175,9 +189,15 @@ final class DeepgramStreamer: NSObject, URLSessionWebSocketDelegate {
         lock.lock()
         connected = true
         reconnectAttempt = 0
-        connectionOffset = Date().timeIntervalSince(recordingStart)
         let queued = pending
         pending.removeAll()
+        // Deepgram restarts its clock at 0 on every connection, and the first
+        // thing this connection receives is the backlog buffered while offline.
+        // Anchoring the offset at "now" would stamp up to 60s of already-spoken
+        // audio as if it were spoken at reconnect time, so back the anchor up by
+        // however much backlog is about to be sent.
+        connectionOffset = Date().timeIntervalSince(recordingStart)
+            - Double(queued.count) * chunkDuration
         lock.unlock()
 
         onStatus?(.connected)
@@ -222,7 +242,7 @@ final class DeepgramStreamer: NSObject, URLSessionWebSocketDelegate {
         let t = DispatchSource.makeTimerSource(queue: .global())
         t.schedule(deadline: .now() + 5, repeating: 5)
         t.setEventHandler { [weak self] in
-            self?.task?.send(.string(#"{"type":"KeepAlive"}"#)) { _ in }
+            self?.currentTask()?.send(.string(#"{"type":"KeepAlive"}"#)) { _ in }
         }
         t.resume()
         keepAlive = t

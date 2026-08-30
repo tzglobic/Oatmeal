@@ -342,7 +342,9 @@ struct MeetingDetailView: View {
     private func speakerColor(_ key: String) -> Color {
         if key == "me" { return .blue }
         let palette: [Color] = [.purple, .orange, .teal, .pink]
-        if key.hasPrefix("them"), let n = Int(key.dropFirst(4)) {
+        // n is a diarization index and should never be negative, but a negative
+        // modulo here would be an out-of-bounds trap rather than a wrong colour.
+        if key.hasPrefix("them"), let n = Int(key.dropFirst(4)), n >= 0 {
             return palette[n % palette.count]
         }
         return .purple

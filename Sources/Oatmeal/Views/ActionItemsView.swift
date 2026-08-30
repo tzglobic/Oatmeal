@@ -37,6 +37,25 @@ final class ActionItemsModel: ObservableObject {
         }
     }
 
+    /// Replaces the state character of the leading `- [ ]` / `* [x]` marker,
+    /// leaving the rest of the line — brackets included — untouched.
+    static func flippingCheckbox(in line: String, to done: Bool) -> String {
+        for marker in ["- [", "* ["] {
+            let indent = line.prefix { $0.isWhitespace }.count
+            guard let range = line.range(of: marker),
+                  line.distance(from: line.startIndex, to: range.lowerBound) == indent
+            else { continue }
+            let stateIndex = range.upperBound
+            guard stateIndex < line.endIndex else { continue }
+            let closeIndex = line.index(after: stateIndex)
+            guard closeIndex < line.endIndex, line[closeIndex] == "]" else { continue }
+            var updated = line
+            updated.replaceSubrange(stateIndex..<closeIndex, with: done ? "x" : " ")
+            return updated
+        }
+        return line
+    }
+
     static func parseCheckbox(_ line: String) -> (text: String, done: Bool)? {
         let trimmed = line.trimmingCharacters(in: .whitespaces)
         for marker in ["- [", "* ["] {
@@ -68,11 +87,10 @@ final class ActionItemsModel: ObservableObject {
             reload()
             return
         }
-        let line = lines[item.lineIndex]
-        lines[item.lineIndex] = item.done
-            ? line.replacingOccurrences(of: "[x]", with: "[ ]")
-                  .replacingOccurrences(of: "[X]", with: "[ ]")
-            : line.replacingOccurrences(of: "[ ]", with: "[x]")
+        // Rewrite only the checkbox marker. replacingOccurrences would also hit
+        // a bracket pair inside the item's own text ("- [ ] fix the [x] badge"),
+        // corrupting it on every toggle.
+        lines[item.lineIndex] = Self.flippingCheckbox(in: lines[item.lineIndex], to: !item.done)
         try? Store.shared.saveNote(Note(meetingId: item.meetingId, kind: "enhanced",
                                         content: lines.joined(separator: "\n"), updatedAt: Date()))
         reload()

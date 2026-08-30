@@ -128,7 +128,13 @@ final class CalendarService: ObservableObject {
         for text in texts.compactMap({ $0 }) where !text.isEmpty {
             let matches = detector.matches(in: text, range: NSRange(text.startIndex..., in: text))
             for match in matches {
-                guard let url = match.url, let host = url.host?.lowercased() else { continue }
+                // Event bodies are attacker-controllable content from whoever
+                // sent the invite, and the detected URL is handed straight to
+                // NSWorkspace.open. The host allowlist below is the main gate;
+                // pinning https keeps a cleartext or odd-scheme link that
+                // happens to carry an allowlisted host from ever being opened.
+                guard let url = match.url, url.scheme?.lowercased() == "https",
+                      let host = url.host?.lowercased() else { continue }
                 if host.contains("teams.microsoft.com") || host.contains("teams.live.com") {
                     return (url, "Teams")
                 }

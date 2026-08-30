@@ -68,7 +68,13 @@ final class PlaybackModel: ObservableObject {
 
     private func startTimer() {
         stopTimer()
-        timer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
+        timer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] timer in
+            // The run loop owns the timer, so a model deallocated mid-playback
+            // would otherwise leave it firing for the life of the process.
+            guard self != nil else {
+                timer.invalidate()
+                return
+            }
             Task { @MainActor in
                 guard let self, let player = self.player else { return }
                 self.currentTime = player.currentTime

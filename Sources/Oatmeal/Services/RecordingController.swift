@@ -145,6 +145,9 @@ final class RecordingController: ObservableObject {
         guard systemStarted || micStarted else {
             pipeline.stop()
             try? Store.shared.delete(meeting)
+            // pipeline.start() already created the .m4a; without the meeting row
+            // nothing will ever reference or clean it up.
+            try? FileManager.default.removeItem(at: recordingURL)
             lastError = """
                 Couldn't start recording — no audio source was available.
 

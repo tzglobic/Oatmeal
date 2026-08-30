@@ -6,6 +6,18 @@ chat, briefs, and recipes. Full roadmap: [granola-clone-plan.md](granola-clone-p
 
 ## Status
 
+**Auto-stop when the meeting ends — done.**
+Recordings no longer run on for hours after everyone has hung up. Oatmeal infers
+the end from two signals: the calendar event's end time having passed (plus a
+2-minute grace period) with **3 minutes of silence** on both channels, or
+**15 minutes of silence** on its own when there is no calendar event to lean on.
+An inferred end never stops the recording outright — it raises a **notification
+and an in-app banner** saying the call looks over and why, with **Keep
+Recording** and **Stop & Save**, and stops only if **60 seconds** pass
+unanswered. Speaking during those 60 seconds cancels it automatically, as does
+Keep Recording, which then stays quiet for 10 minutes. Pausing holds the silence
+clock. Turn the whole thing off in Settings → Recording.
+
 **Speaker identification — done.**
 Diarized "Them" speakers can be named: click a speaker label in the Transcript to
 rename it, or open **⋯ → Speakers…** for a panel listing every detected speaker (with a

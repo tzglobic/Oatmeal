@@ -36,6 +36,7 @@ struct ContentView: View {
     @EnvironmentObject var model: MeetingListModel
     @EnvironmentObject var recorder: RecordingController
     @ObservedObject private var calendar = CalendarService.shared
+    @ObservedObject private var endDetector = MeetingEndDetector.shared
     @State private var renameTarget: Meeting?
     @State private var renameText = ""
 
@@ -48,6 +49,7 @@ struct ContentView: View {
             detail
         }
         .toolbar { toolbarContent }
+        .safeAreaInset(edge: .top) { meetingEndedBanner }
         .onAppear {
             model.reload()
             Task { await CalendarService.shared.requestAccessAndStart() }
@@ -173,6 +175,39 @@ struct ContentView: View {
     }
 
     // MARK: - Toolbar
+
+    /// Asks the same question as the notification, in case that was missed or
+    /// dismissed — the countdown is live so it's obvious how long is left.
+    @ViewBuilder
+    private var meetingEndedBanner: some View {
+        if let pending = endDetector.pending {
+            HStack(spacing: 12) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Still recording — has this meeting ended?")
+                        .font(.headline)
+                    Text("Oatmeal thinks the call is over — \(pending.trigger.summary).")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 12)
+                TimelineView(.periodic(from: .now, by: 1)) { context in
+                    let remaining = max(0, Int(pending.deadline.timeIntervalSince(context.date).rounded()))
+                    Text("Stopping in \(remaining)s")
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
+                Button("Keep Recording") { endDetector.keepRecording() }
+                Button("Stop & Save") { endDetector.stopNow() }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .background(.orange.opacity(0.15))
+            .overlay(alignment: .bottom) { Divider() }
+            .transition(.move(edge: .top).combined(with: .opacity))
+        }
+    }
 
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {

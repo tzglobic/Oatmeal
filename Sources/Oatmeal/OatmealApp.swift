@@ -5,6 +5,7 @@ struct OatmealApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var store = MeetingListModel()
     @StateObject private var recorder = RecordingController.shared
+    @ObservedObject private var endDetector = MeetingEndDetector.shared
 
     var body: some Scene {
         WindowGroup(id: "main") {
@@ -19,10 +20,16 @@ struct OatmealApp: App {
         MenuBarExtra {
             MenuBarContent(recorder: recorder)
         } label: {
-            Image(systemName: recorder.isRecording
-                  ? (recorder.isPaused ? "pause.circle.fill" : "record.circle.fill")
-                  : "waveform.circle")
+            Image(systemName: menuBarIcon)
         }
+    }
+
+    /// The menu bar is often the only Oatmeal on screen during a call, so an
+    /// inferred end has to be visible there too.
+    private var menuBarIcon: String {
+        if endDetector.pending != nil { return "exclamationmark.circle.fill" }
+        if recorder.isRecording { return recorder.isPaused ? "pause.circle.fill" : "record.circle.fill" }
+        return "waveform.circle"
     }
 }
 
@@ -30,9 +37,16 @@ struct OatmealApp: App {
 /// — plain NSApp.activate can't recreate the main window once it's been closed.
 private struct MenuBarContent: View {
     @ObservedObject var recorder: RecordingController
+    @ObservedObject private var endDetector = MeetingEndDetector.shared
     @Environment(\.openWindow) private var openWindow
 
     var body: some View {
+        if endDetector.pending != nil {
+            Text("Oatmeal thinks this meeting has ended")
+            Button("Keep Recording") { endDetector.keepRecording() }
+            Button("Stop & Save Now") { endDetector.stopNow() }
+            Divider()
+        }
         if recorder.isRecording {
             Button("Stop Recording") { recorder.toggle() }
             Button(recorder.isPaused ? "Resume Recording" : "Pause Recording") {

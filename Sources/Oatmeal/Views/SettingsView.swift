@@ -104,6 +104,8 @@ struct SettingsView: View {
     @State private var anthropicKey = ""
     @State private var deepgramStatus: KeyStatus = .unknown
     @State private var anthropicStatus: KeyStatus = .unknown
+    /// Same key MeetingEndDetector reads, so the toggle is the single source of truth.
+    @AppStorage("autoStopWhenMeetingEnds") private var autoStop = true
 
     enum KeyStatus: Equatable {
         case unknown, checking, valid, invalid, error(String)
@@ -122,6 +124,16 @@ struct SettingsView: View {
     var body: some View {
         Form {
             PermissionsHealthView()
+            Section("Recording") {
+                Toggle("Ask before leaving a finished meeting recording", isOn: $autoStop)
+                Text("""
+                    When the calendar event has ended and nobody has spoken for a few minutes \
+                    — or nobody has spoken at all for 15 — Oatmeal asks whether the meeting is \
+                    over and stops after 60 seconds if you don't answer.
+                    """)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
             Section("Deepgram (live transcription)") {
                 keyRow(key: $deepgramKey, status: deepgramStatus) {
                     validateDeepgram()

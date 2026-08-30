@@ -35,6 +35,14 @@ final class RecordingController: ObservableObject {
         return f
     }()
 
+    private init() {
+        // The detector only ever proposes; stopping is this controller's job,
+        // so it goes through the same stop() as the button and the menu bar.
+        MeetingEndDetector.shared.onStop = { [weak self] in
+            Task { await self?.stop() }
+        }
+    }
+
     func toggle() {
         if isRecording {
             Task { await stop() }
@@ -109,6 +117,7 @@ final class RecordingController: ObservableObject {
             Task { @MainActor in
                 self?.micLevel = mic
                 self?.systemLevel = system
+                MeetingEndDetector.shared.noteLevels(mic: mic, system: system)
             }
         }
         streamer.onSegment = { [weak self] segment in
@@ -169,12 +178,17 @@ final class RecordingController: ObservableObject {
         self.recordingStart = recordingStart
         self.isPaused = false
         self.isRecording = true
+
+        // The calendar end time is what makes the earlier of the two triggers
+        // available; without an event, only prolonged silence can end this.
+        MeetingEndDetector.shared.begin(eventEnd: event?.end)
     }
 
     func togglePause() {
         guard isRecording else { return }
         isPaused.toggle()
         pipeline?.setPaused(isPaused)
+        MeetingEndDetector.shared.setPaused(isPaused)
     }
 
     private func systemAudioStartMessage(error: Error, preflightGranted: Bool) -> String {
@@ -198,6 +212,7 @@ final class RecordingController: ObservableObject {
         // against a second Stop press (or menu-bar/notification path) re-entering.
         guard !isStopping else { return }
         isStopping = true
+        MeetingEndDetector.shared.end()
         streamer?.stop()
         mic?.stop()
         await system?.stop()

@@ -184,7 +184,7 @@ final class Store {
     }
 
     /// Case-insensitive substring search across titles, transcripts, and notes.
-    /// LIKE is plenty at personal scale; swap for FTS5 when Phase 4 chat needs it.
+    /// Searches meeting titles, transcript text, and notes using SQL LIKE.
     func searchMeetings(_ query: String) throws -> [Meeting] {
         // Escape LIKE metacharacters so a literal % or _ in the query isn't
         // treated as a wildcard.

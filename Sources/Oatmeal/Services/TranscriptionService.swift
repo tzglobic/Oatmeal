@@ -1,7 +1,7 @@
 import Foundation
 
-/// Deepgram client. Phase 0: key validation.
-/// Phase 1: two live-streaming WebSocket connections (mic + system audio).
+/// Deepgram key validation and saved-recording transcription.
+/// Live multichannel transcription is handled by DeepgramStreamer.
 enum TranscriptionService {
     enum ValidationResult: Equatable {
         case valid

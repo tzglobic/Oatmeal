@@ -1,6 +1,6 @@
 import Foundation
 
-/// Enhancement templates — each is just a different system prompt, Granola-style.
+/// Enhancement templates, each defined by a dedicated system prompt.
 enum NoteTemplate: String, CaseIterable, Identifiable {
     case standard
     case interview

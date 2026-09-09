@@ -1,7 +1,7 @@
 import Foundation
 import KeychainAccess
 
-/// API keys live in the macOS Keychain, never in UserDefaults or on disk.
+/// API keys live in the macOS Keychain, not in UserDefaults or application data files.
 enum KeychainStore {
     private static let keychain = Keychain(service: "com.oatmeal.app")
 

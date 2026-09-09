@@ -1,9 +1,9 @@
 import Foundation
 
 /// Claude API client (raw URLSession — no official Swift SDK).
-/// Phase 0: key validation. Phase 2+: note enhancement, chat, briefs, recipes.
+/// Validates credentials and generates notes, titles, and speaker names.
 enum AIService {
-    /// Model used for note enhancement and chat, per the project plan ("claude-sonnet").
+    /// Model used for note enhancement, title generation, and speaker identification.
     static let model = "claude-sonnet-5"
 
     private static let baseURL = URL(string: "https://api.anthropic.com/v1")!
@@ -120,7 +120,7 @@ enum AIService {
         return text
     }
 
-    /// Granola-style note enhancement: user's raw notes + transcript → polished notes.
+    /// Note enhancement: user's raw notes + transcript → polished notes.
     static func enhanceNotes(userNotes: String, transcript: String,
                              template: NoteTemplate) async throws -> String {
         let trimmedNotes = userNotes.trimmingCharacters(in: .whitespacesAndNewlines)

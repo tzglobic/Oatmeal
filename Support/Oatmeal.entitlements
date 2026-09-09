@@ -2,7 +2,7 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <!-- Not sandboxed: system audio capture via ScreenCaptureKit rules out the App Store anyway. -->
+    <!-- Local app build; App Sandbox is not enabled by this configuration. -->
     <key>com.apple.security.device.audio-input</key>
     <true/>
     <key>com.apple.security.personal-information.calendars</key>

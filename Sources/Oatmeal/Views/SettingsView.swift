@@ -30,9 +30,9 @@ struct PermissionsHealthView: View {
             }
             statusRow(ok: calendarStatus == .fullAccess,
                       pending: calendarStatus == .notDetermined,
-                      title: "Calendar (Outlook / Teams)",
+                      title: "Calendar",
                       detail: calendarStatus == .fullAccess
-                            ? "Granted — Outlook events appear once the account is in System Settings → Internet Accounts"
+                            ? "Granted — reads calendars enabled in System Settings → Internet Accounts"
                             : calendarStatus == .notDetermined ? "Not requested yet"
                             : "Denied — Up Next and auto-titling are off") {
                 if calendarStatus == .notDetermined {
@@ -140,7 +140,7 @@ struct SettingsView: View {
                     validateDeepgram()
                 }
             }
-            Section("Anthropic (AI notes & chat)") {
+            Section("Anthropic (AI notes & speaker names)") {
                 keyRow(key: $anthropicKey, status: anthropicStatus) {
                     validateAnthropic()
                 }

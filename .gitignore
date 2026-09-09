@@ -3,3 +3,27 @@ Support/Oatmeal.iconset/
 .swiftpm/
 .DS_Store
 *.xcodeproj
+
+# Local credentials and signing material
+.env
+.env.*
+!.env.example
+*.p12
+*.pfx
+*.key
+*.pem
+*.mobileprovision
+*.provisionprofile
+
+# Runtime data and diagnostics (never commit real meeting fixtures)
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
+*.db
+*.db-*
+*.m4a
+*.wav
+*.log
+*.xcuserstate
+xcuserdata/

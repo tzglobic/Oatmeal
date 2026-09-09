@@ -274,6 +274,7 @@ struct MeetingDetailView: View {
 
     private func editor(text: Binding<String>) -> some View {
         TextEditor(text: text)
+            .disabled(!notes.canEdit)
             .font(.body)
             .scrollContentBackground(.hidden)
             .padding(.horizontal, 16)
@@ -351,7 +352,12 @@ struct MeetingDetailView: View {
 
     private func commitSpeakerRename() {
         guard let key = renameSpeakerKey else { return }
-        try? Store.shared.updateSpeakerName(meetingId: meeting.id, key: key, name: renameSpeakerText)
+        do {
+            try Store.shared.updateSpeakerName(meetingId: meeting.id, key: key, name: renameSpeakerText)
+        } catch {
+            notes.errorMessage = "Couldn't save the speaker name: \(error.localizedDescription)"
+            return
+        }
         speakerNames = (try? Store.shared.meeting(id: meeting.id))?.speakerNameMap ?? speakerNames
         renameSpeakerKey = nil
         NotificationCenter.default.post(name: .meetingChanged, object: nil)
@@ -365,7 +371,11 @@ struct MeetingDetailView: View {
             editedTitle = meeting.title
             return
         }
-        try? Store.shared.updateTitle(meetingId: meeting.id, title: trimmed)
+        do { try Store.shared.updateTitle(meetingId: meeting.id, title: trimmed) }
+        catch {
+            notes.errorMessage = "Couldn't save the title: \(error.localizedDescription)"
+            return
+        }
         NotificationCenter.default.post(name: .meetingChanged, object: nil)
     }
 

@@ -68,15 +68,40 @@ final class NotesModelTests: XCTestCase {
         let meeting = Meeting.new(title: "Meeting")
         try store.save(meeting)
         let model = NotesModel(meeting: meeting, store: store)
-        try store.dbQueue.write { db in
+        try await store.dbQueue.write { db in
             try db.execute(sql: "CREATE TRIGGER fail_note BEFORE INSERT ON notes BEGIN SELECT RAISE(FAIL, 'disk full'); END")
         }
         model.userNotes = "Do not lose this"
         model.flush()
         XCTAssertTrue(model.errorMessage?.contains("Couldn't save notes") == true)
         XCTAssertEqual(model.userNotes, "Do not lose this")
-        try store.dbQueue.write { db in try db.execute(sql: "DROP TRIGGER fail_note") }
+        try await store.dbQueue.write { db in try db.execute(sql: "DROP TRIGGER fail_note") }
         model.flush()
         XCTAssertEqual(try store.note(for: meeting.id, kind: "user")?.content, "Do not lose this")
     }
+    @MainActor func testCancelledEnhancementLeavesJobPendingAndDoesNotSaveLateResult() async throws {
+        let store = try Store(dbQueue: DatabaseQueue())
+        let meeting = Meeting.new(title: "Manual title")
+        try store.save(meeting)
+        _ = try store.finishMeeting(id: meeting.id, at: Date())
+        let gate = Gate()
+        let entered = expectation(description: "AI request started")
+        let model = NotesModel(meeting: meeting, store: store, enhanceNotes: { _, _, _ in
+            entered.fulfill()
+            await gate.wait()
+            return "Late result after Quit"
+        }, generateTitle: { _, _ in "unused" }, identifySpeakers: { _ in })
+        model.userNotes = "Preserve the raw notes"
+        let task = try XCTUnwrap(model.enhance(auto: true))
+        await fulfillment(of: [entered], timeout: 2)
+        task.cancel()
+        model.flush()
+        await gate.release()
+        await task.value
+        XCTAssertNil(try store.note(for: meeting.id, kind: "enhanced"))
+        XCTAssertEqual(try store.note(for: meeting.id, kind: "user")?.content, "Preserve the raw notes")
+        XCTAssertEqual(try store.pendingEnhancements().map(\.id), [meeting.id])
+        XCTAssertFalse(model.isEnhancing)
+    }
+
 }

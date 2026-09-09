@@ -13,6 +13,7 @@ final class NotesModel: ObservableObject {
     private var enhancementTask: Task<Void, Never>?
     private var userDirty = false
     private var enhancedDirty = false
+    private var saveError: String?
 
     private final class WeakModel {
         weak var value: NotesModel?
@@ -23,10 +24,10 @@ final class NotesModel: ObservableObject {
     var hasUnsavedChanges: Bool { userDirty || enhancedDirty }
 
     /// Views and post-recording work share the same editor, including unsaved text.
-    static func shared(for meeting: Meeting) -> NotesModel {
+    static func shared(for meeting: Meeting, store: Store = .shared) -> NotesModel {
         if let model = models[meeting.id]?.value { return model }
         models = models.filter { $0.value.value != nil }
-        let model = NotesModel(meeting: meeting)
+        let model = NotesModel(meeting: meeting, store: store)
         models[meeting.id] = WeakModel(model)
         return model
     }
@@ -116,17 +117,23 @@ final class NotesModel: ObservableObject {
                                         content: enhancedNotes, updatedAt: now))
                 enhancedDirty = false
             }
-            if !hasUnsavedChanges { Self.unsavedModels[meetingId] = nil }
+            if !hasUnsavedChanges {
+                Self.unsavedModels[meetingId] = nil
+                if errorMessage == saveError { errorMessage = nil }
+                saveError = nil
+            }
         } catch {
             // Keep failed edits available even if the window closes.
             if Self.models[meetingId]?.value === self { Self.unsavedModels[meetingId] = self }
-            errorMessage = "Couldn't save notes: \(error.localizedDescription). Your edits are still in this window."
+            saveError = "Couldn't save notes: \(error.localizedDescription). Your edits are still available in this meeting."
+            errorMessage = saveError
         }
     }
 
     // MARK: - Enhancement
 
-    var canEnhance: Bool { !isEnhancing }
+    var canEdit: Bool { !suppressSave }
+    var canEnhance: Bool { canEdit && !isEnhancing }
 
     /// `auto` marks the automatic post-recording invocation: an empty meeting is
     /// then a silent no-op rather than an error the user never asked about.

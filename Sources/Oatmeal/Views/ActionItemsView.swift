@@ -14,6 +14,7 @@ struct ActionItem: Identifiable {
 @MainActor
 final class ActionItemsModel: ObservableObject {
     @Published var items: [ActionItem] = []
+    @Published var errorMessage: String?
 
     func reload() {
         var found: [ActionItem] = []
@@ -91,9 +92,12 @@ final class ActionItemsModel: ObservableObject {
         // a bracket pair inside the item's own text ("- [ ] fix the [x] badge"),
         // corrupting it on every toggle.
         lines[item.lineIndex] = Self.flippingCheckbox(in: lines[item.lineIndex], to: !item.done)
-        try? Store.shared.saveNote(Note(meetingId: item.meetingId, kind: "enhanced",
-                                        content: lines.joined(separator: "\n"), updatedAt: Date()))
-        reload()
+        do {
+            try Store.shared.saveNote(Note(meetingId: item.meetingId, kind: "enhanced",
+                                            content: lines.joined(separator: "\n"), updatedAt: Date()))
+            errorMessage = nil
+            reload()
+        } catch { errorMessage = "Couldn't save the action item: \(error.localizedDescription)" }
     }
 }
 
@@ -156,6 +160,12 @@ struct ActionItemsView: View {
             }
         }
         .navigationTitle("Action Items")
+        .alert("Action Items", isPresented: Binding(
+            get: { model.errorMessage != nil },
+            set: { if !$0 { model.errorMessage = nil } }
+        )) {
+            Button("OK", role: .cancel) {}
+        } message: { Text(model.errorMessage ?? "") }
         .onAppear { model.reload() }
         .onReceive(NotificationCenter.default.publisher(for: .meetingChanged)) { _ in
             model.reload()

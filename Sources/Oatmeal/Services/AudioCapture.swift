@@ -123,8 +123,13 @@ final class SystemAudioCapture: NSObject, SCStreamDelegate, SCStreamOutput {
 
         let stream = SCStream(filter: filter, configuration: config, delegate: self)
         try stream.addStreamOutput(self, type: .audio, sampleHandlerQueue: queue)
-        try await stream.startCapture()
         self.stream = stream
+        do {
+            try await stream.startCapture()
+        } catch {
+            await stop()
+            throw error
+        }
     }
 
     func stop() async {

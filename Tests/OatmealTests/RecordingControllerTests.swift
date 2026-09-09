@@ -247,7 +247,7 @@ final class RecordingControllerTests: XCTestCase {
         await Task.yield()
         await gate.release()
         await startTask.value
-        await quitting.value
+        _ = await quitting.value
         XCTAssertEqual(f.pipeline.starts, 0)
         XCTAssertTrue(try f.store.allMeetings().isEmpty)
     }
@@ -257,7 +257,7 @@ final class RecordingControllerTests: XCTestCase {
         defer { f.cleanup() }
         let recorder = f.controller()
         await recorder.start()
-        try f.store.dbQueue.write { db in
+        try await f.store.dbQueue.write { db in
             try db.execute(sql: "CREATE TRIGGER fail_segment BEFORE INSERT ON transcript_segments BEGIN SELECT RAISE(FAIL, 'disk full'); END")
         }
         f.streamer.finishAction = {
@@ -274,4 +274,48 @@ final class RecordingControllerTests: XCTestCase {
         await recorder.stop()
         XCTAssertTrue(recorder.lastError?.contains("Audio could not be saved") == true)
     }
+    @MainActor func testFailedMeetingFinalizationPreventsQuitAndCanBeRetried() async throws {
+        let f = try RecordingFixture()
+        defer { f.cleanup() }
+        let recorder = f.controller()
+        await recorder.start()
+        try await f.store.dbQueue.write { db in
+            try db.execute(sql: "CREATE TRIGGER fail_finish BEFORE UPDATE OF endedAt ON meetings BEGIN SELECT RAISE(FAIL, 'disk full'); END")
+        }
+        await recorder.stop()
+        XCTAssertTrue(recorder.lastError?.contains("Couldn't save the meeting end time") == true)
+        let firstQuit = await recorder.shutdown()
+        XCTAssertFalse(firstQuit)
+        try await f.store.dbQueue.write { db in try db.execute(sql: "DROP TRIGGER fail_finish") }
+        let secondQuit = await recorder.shutdown()
+        XCTAssertTrue(secondQuit)
+        XCTAssertNotNil(try f.store.allMeetings().first?.endedAt)
+        XCTAssertEqual(try f.store.pendingEnhancements().count, 1)
+    }
+
+    @MainActor func testFailedNoteSavePreventsQuitAndSurvivesClosingTheEditor() async throws {
+        let f = try RecordingFixture()
+        defer { f.cleanup() }
+        let meeting = Meeting.new(title: "Manual meeting")
+        try f.store.save(meeting)
+        try await f.store.dbQueue.write { db in
+            try db.execute(sql: "CREATE TRIGGER fail_note BEFORE INSERT ON notes BEGIN SELECT RAISE(FAIL, 'disk full'); END")
+        }
+        weak var retained: NotesModel?
+        do {
+            let notes = NotesModel.shared(for: meeting, store: f.store)
+            notes.userNotes = "Keep these unsaved edits"
+            notes.flush()
+            retained = notes
+        }
+        XCTAssertNotNil(retained)
+        let recorder = f.controller()
+        let firstQuit = await recorder.shutdown()
+        XCTAssertFalse(firstQuit)
+        try await f.store.dbQueue.write { db in try db.execute(sql: "DROP TRIGGER fail_note") }
+        let secondQuit = await recorder.shutdown()
+        XCTAssertTrue(secondQuit)
+        XCTAssertEqual(try f.store.note(for: meeting.id, kind: "user")?.content, "Keep these unsaved edits")
+    }
+
 }

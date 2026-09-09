@@ -61,7 +61,7 @@ struct ContentView: View {
         .onChange(of: recorder.isRecording) { _, _ in
             model.reload()
         }
-        .alert("Recording", isPresented: Binding(
+        .alert("Oatmeal", isPresented: Binding(
             get: { recorder.lastError != nil },
             set: { if !$0 { recorder.lastError = nil } }
         )) {
@@ -273,15 +273,23 @@ struct ContentView: View {
         let trimmed = renameText.trimmingCharacters(in: .whitespacesAndNewlines)
         renameTarget = nil
         guard !trimmed.isEmpty, trimmed != meeting.title else { return }
-        try? Store.shared.updateTitle(meetingId: meeting.id, title: trimmed)
-        model.reload()
+        do {
+            try Store.shared.updateTitle(meetingId: meeting.id, title: trimmed)
+            model.reload()
+        } catch { recorder.lastError = "Couldn't rename the meeting: \(error.localizedDescription)" }
     }
 
     private func deleteMeeting(_ meeting: Meeting) {
         // Deleting cascades to transcript segments, notes, and chats (FK).
-        try? Store.shared.delete(meeting)
-        if let path = meeting.audioFilePath {
-            try? FileManager.default.removeItem(atPath: path)
+        do {
+            try Store.shared.delete(meeting)
+        } catch {
+            recorder.lastError = "Couldn't delete the meeting: \(error.localizedDescription)"
+            return // Do not remove recoverable audio if the database operation failed.
+        }
+        if let path = meeting.audioFilePath, FileManager.default.fileExists(atPath: path) {
+            do { try FileManager.default.removeItem(atPath: path) }
+            catch { recorder.lastError = "The meeting was deleted, but its audio file could not be removed: \(error.localizedDescription)" }
         }
         if model.selection == meeting.id { model.selection = nil }
         model.reload()

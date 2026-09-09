@@ -165,10 +165,12 @@ final class Store {
         }
     }
 
-    func updateSpeakerName(meetingId: String, key: String, name: String) throws {
+    @discardableResult
+    func updateSpeakerName(meetingId: String, key: String, name: String, onlyIfUnnamed: Bool = false) throws -> Bool {
         try dbQueue.write { db in
-            guard var meeting = try Meeting.fetchOne(db, key: meetingId) else { return }
+            guard var meeting = try Meeting.fetchOne(db, key: meetingId) else { return false }
             var map = meeting.speakerNameMap
+            guard !onlyIfUnnamed || map[key]?.isEmpty != false else { return false }
             let trimmed = name.trimmingCharacters(in: .whitespaces)
             if trimmed.isEmpty {
                 map.removeValue(forKey: key)
@@ -177,6 +179,7 @@ final class Store {
             }
             meeting.speakerNames = String(data: try JSONEncoder().encode(map), encoding: .utf8)
             try meeting.save(db)
+            return true
         }
     }
 

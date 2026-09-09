@@ -1,7 +1,5 @@
 import Foundation
 import SwiftUI
-import AVFoundation
-import CoreGraphics
 
 /// Orchestrates a recording session: permissions → meeting row → audio capture
 /// → Deepgram streaming → live transcript state → persistence.
@@ -30,6 +28,7 @@ final class RecordingController: ObservableObject {
     private var processingTasks: [String: Task<Void, Never>] = [:]
     private var sessionID: UUID?
     private var transcriptInbox: TranscriptInbox?
+    private var unfinishedMeetingEnds: [String: Date] = [:]
     @Published var isPaused = false
     @Published var activeMeeting: Meeting?
     @Published var liveSegments: [TranscriptSegment] = []
@@ -296,9 +295,14 @@ final class RecordingController: ObservableObject {
         streamer = nil
         sessionID = nil
 
+        var finishedMeeting: Meeting?
         if let meeting = activeMeeting {
+            let endedAt = dependencies.now()
+            unfinishedMeetingEnds[meeting.id] = endedAt
             do {
-                activeMeeting = try store.finishMeeting(id: meeting.id, at: dependencies.now())
+                finishedMeeting = try store.finishMeeting(id: meeting.id, at: endedAt)
+                activeMeeting = finishedMeeting
+                unfinishedMeetingEnds[meeting.id] = nil
             } catch {
                 lastError = "Couldn't save the meeting end time: \(error.localizedDescription)"
             }
@@ -310,7 +314,7 @@ final class RecordingController: ObservableObject {
         systemLevel = 0
         recordingStart = nil
         isPaused = false
-        if let meeting = activeMeeting, !shuttingDown { process(meeting) }
+        if let meeting = finishedMeeting, !shuttingDown { process(meeting) }
         state = .idle
         NotificationCenter.default.post(name: .meetingChanged, object: nil)
     }
@@ -327,7 +331,7 @@ final class RecordingController: ObservableObject {
             if let postProcess {
                 await postProcess(meeting)
             } else {
-                let notes = NotesModel.shared(for: meeting)
+                let notes = NotesModel.shared(for: meeting, store: store)
                 await notes.enhance(auto: true)?.value
                 if !Task.isCancelled, let error = notes.errorMessage {
                     lastError = "Notes for \(meeting.title): \(error)"
@@ -356,6 +360,16 @@ final class RecordingController: ObservableObject {
         await stop()
         for task in processingTasks.values { task.cancel() }
         NotesModel.cancelEnhancements()
+        do {
+            for (id, endedAt) in unfinishedMeetingEnds {
+                _ = try store.finishMeeting(id: id, at: endedAt)
+                unfinishedMeetingEnds[id] = nil
+            }
+        } catch {
+            lastError = "Couldn't save the meeting before quitting: \(error.localizedDescription). Please retry Quit after resolving the storage error."
+            shuttingDown = false
+            return false
+        }
         guard NotesModel.flushAll() else {
             lastError = "Couldn't save all notes. Oatmeal stayed open so you can copy your edits or retry saving."
             shuttingDown = false

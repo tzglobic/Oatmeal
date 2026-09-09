@@ -149,9 +149,14 @@ struct SpeakersSheet: View {
     }
 
     private func save() {
-        for row in rows {
-            try? Store.shared.updateSpeakerName(
-                meetingId: meetingId, key: row.key, name: names[row.key] ?? "")
+        do {
+            for row in rows {
+                try Store.shared.updateSpeakerName(
+                    meetingId: meetingId, key: row.key, name: names[row.key] ?? "")
+            }
+        } catch {
+            statusMessage = "Couldn't save speaker names: \(error.localizedDescription)"
+            return
         }
         NotificationCenter.default.post(name: .meetingChanged, object: nil)
         onSaved()

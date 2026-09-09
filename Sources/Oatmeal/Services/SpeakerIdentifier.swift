@@ -12,10 +12,10 @@ enum SpeakerIdentifier {
     /// user set manually. Posts `.meetingChanged` when anything was applied.
     @discardableResult
     static func identify(meetingId: String) async throws -> Outcome {
-        guard let meeting = try? Store.shared.meeting(id: meetingId) else {
+        guard let meeting = try Store.shared.meeting(id: meetingId) else {
             return Outcome(named: 0, unnamedLeft: 0)
         }
-        let segments = (try? Store.shared.segments(for: meetingId)) ?? []
+        let segments = try Store.shared.segments(for: meetingId)
         let existing = meeting.speakerNameMap
         let themKeys = Set(segments.map(\.speaker)).filter { $0 != "me" }
         let unnamed = themKeys.filter { existing[$0]?.isEmpty != false }
@@ -33,8 +33,9 @@ enum SpeakerIdentifier {
         for (key, name) in mapping {
             let trimmed = name.trimmingCharacters(in: .whitespaces)
             guard unnamed.contains(key), !trimmed.isEmpty else { continue }
-            try? Store.shared.updateSpeakerName(meetingId: meetingId, key: key, name: trimmed)
-            named += 1
+            if try Store.shared.updateSpeakerName(meetingId: meetingId, key: key, name: trimmed, onlyIfUnnamed: true) {
+                named += 1
+            }
         }
         if named > 0 {
             NotificationCenter.default.post(name: .meetingChanged, object: nil)

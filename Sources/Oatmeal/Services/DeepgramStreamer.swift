@@ -52,7 +52,7 @@ private final class WebSocketConnection: NSObject, DeepgramConnection, URLSessio
 
 /// All connection state and sends belong to one serial queue. Only one audio
 /// send is in flight; new samples join the same FIFO as the reconnect backlog.
-final class DeepgramStreamer {
+final class DeepgramStreamer: @unchecked Sendable {
     struct Segment {
         let channel: Int
         let speakerIndex: Int?
@@ -62,8 +62,18 @@ final class DeepgramStreamer {
         let isFinal: Bool
     }
     enum Status: Equatable { case connecting, connected, reconnecting, stopped }
-    var onSegment: ((Segment) -> Void)?
-    var onStatus: ((Status) -> Void)?
+    // Callback access also belongs to the queue, so changing a handler cannot
+    // race incoming results. Handlers execute on this queue and must not block it.
+    private var segmentHandler: ((Segment) -> Void)?
+    private var statusHandler: ((Status) -> Void)?
+    var onSegment: ((Segment) -> Void)? {
+        get { queue.sync { segmentHandler } }
+        set { queue.sync { segmentHandler = newValue } }
+    }
+    var onStatus: ((Status) -> Void)? {
+        get { queue.sync { statusHandler } }
+        set { queue.sync { statusHandler = newValue } }
+    }
 
     private struct Chunk {
         let data: Data
@@ -103,7 +113,7 @@ final class DeepgramStreamer {
 
     private func openConnection() {
         guard !stopped, !finishing, connection == nil else { return }
-        onStatus?(reconnectAttempt == 0 ? .connecting : .reconnecting)
+        statusHandler?(reconnectAttempt == 0 ? .connecting : .reconnecting)
         var components = URLComponents(string: "wss://api.deepgram.com/v1/listen")!
         components.queryItems = [
             .init(name: "model", value: "nova-3"),
@@ -158,7 +168,7 @@ final class DeepgramStreamer {
         guard id == generation, !stopped else { return }
         connected = true
         reconnectAttempt = 0
-        onStatus?(.connected)
+        statusHandler?(.connected)
         if !finishing { startKeepAlive(id: id) }
         pump()
     }
@@ -206,7 +216,7 @@ final class DeepgramStreamer {
         keepAlive = nil
         if finishing { completeFinish(); return }
         reconnectAttempt += 1
-        onStatus?(.reconnecting)
+        statusHandler?(.reconnecting)
         let ticket = generation
         queue.asyncAfter(deadline: .now() + reconnectDelay(reconnectAttempt)) { [weak self] in
             guard let self, self.generation == ticket else { return }
@@ -241,7 +251,7 @@ final class DeepgramStreamer {
         connection?.cancel()
         connection = nil
         pending.removeAll()
-        onStatus?(.stopped)
+        statusHandler?(.stopped)
         let waiters = finishWaiters
         finishWaiters.removeAll()
         waiters.forEach { $0.resume() }
@@ -299,7 +309,7 @@ final class DeepgramStreamer {
             start: offset + start,
             end: offset + start + (response.duration ?? 0),
             isFinal: response.is_final ?? false)
-        onSegment?(segment)
+        segmentHandler?(segment)
     }
 
 }

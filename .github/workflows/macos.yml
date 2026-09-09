@@ -18,6 +18,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: Toolchain
         run: swift --version
+      - name: Presentation checks
+        run: bash Scripts/check-presentation.sh
       - name: Regression tests
         run: swift test
       - name: Release build

@@ -15,11 +15,12 @@ struct MeetingDetailView: View {
     @State private var renameSpeakerKey: String?
     @State private var renameSpeakerText = ""
     @State private var showSpeakersSheet = false
+    @State private var isEditingNotes = false
 
     enum Tab: String, CaseIterable, Identifiable {
         case notes = "Notes"
         case transcript = "Transcript"
-        case myNotes = "My Notes"
+        case myNotes = "Scratchpad"
         var id: String { rawValue }
     }
 
@@ -103,11 +104,13 @@ struct MeetingDetailView: View {
     // MARK: - Header
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 14) {
+            OatmealSectionLabel(title: "Meeting notes")
             HStack(spacing: 8) {
                 TextField("Meeting title", text: $editedTitle)
                     .textFieldStyle(.plain)
-                    .font(.title2.bold())
+                    .font(.system(size: 26, weight: .bold, design: .rounded))
+                    .accessibilityLabel("Meeting title")
                     .onSubmit { saveTitle() }
                 if isActive {
                     Label(recorder.isPaused ? "Paused" : "Recording",
@@ -116,11 +119,17 @@ struct MeetingDetailView: View {
                         .font(.caption)
                         .fixedSize()
                 }
-                Text(meeting.createdAt, format: .dateTime.weekday().month().day().hour().minute())
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize()
             }
+
+            HStack(spacing: 8) {
+                Text(meeting.createdAt, format: .dateTime.weekday().month().day().hour().minute())
+                if let ended = meeting.endedAt {
+                    Text("·")
+                    Text(PlaybackModel.timeString(max(0, ended.timeIntervalSince(meeting.createdAt))))
+                }
+            }
+            .font(.caption)
+            .foregroundStyle(OatmealStyle.muted)
 
             if !meeting.attendeesList.isEmpty {
                 Label(meeting.attendeesList.joined(separator: ", "), systemImage: "person.2")
@@ -130,34 +139,23 @@ struct MeetingDetailView: View {
                     .help(meeting.attendeesList.joined(separator: "\n"))
             }
 
-            HStack(spacing: 10) {
-                Picker("", selection: $tab) {
-                    ForEach(Tab.allCases) { t in Text(t.rawValue).tag(t) }
-                }
-                .pickerStyle(.segmented)
-                .frame(maxWidth: 320)
-
-                Spacer()
-
-                Picker("Template", selection: $notes.template) {
-                    ForEach(NoteTemplate.allCases) { t in Text(t.displayName).tag(t) }
-                }
-                .frame(maxWidth: 160)
-                .help("Enhancement style used when generating notes")
-
-                if notes.isEnhancing {
-                    ProgressView().controlSize(.small)
-                } else {
+            HStack(spacing: 20) {
+                ForEach(Tab.allCases) { t in
                     Button {
-                        notes.enhance()
+                        tab = t
                     } label: {
-                        Label(notes.enhancedNotes.isEmpty ? "Enhance" : "Re-enhance",
-                              systemImage: "sparkles")
+                        Text(t.rawValue)
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(tab == t ? OatmealStyle.ink : OatmealStyle.muted)
+                            .padding(.vertical, 10)
+                            .overlay(alignment: .bottom) {
+                                Rectangle().fill(tab == t ? OatmealStyle.accent : .clear).frame(height: 2)
+                            }
                     }
-                    .disabled(!notes.canEnhance || isActive)
-                    .help("Merge your notes and the transcript into polished notes with AI")
+                    .buttonStyle(.plain)
+                    .accessibilityAddTraits(tab == t ? .isSelected : [])
                 }
-
+                Spacer()
                 Button {
                     copyCurrentTab()
                 } label: {
@@ -175,6 +173,14 @@ struct MeetingDetailView: View {
                 }
                 .menuStyle(.borderlessButton)
                 .frame(width: 30)
+                .accessibilityLabel("Meeting options")
+            }
+
+            if tab == .notes {
+                ViewThatFits(in: .horizontal) {
+                    HStack { noteActions }
+                    VStack(alignment: .leading, spacing: 8) { noteActions }
+                }
             }
 
             if isRetranscribing {
@@ -193,7 +199,34 @@ struct MeetingDetailView: View {
                     .textSelection(.enabled)
             }
         }
-        .padding()
+        .padding(.horizontal, 24)
+        .padding(.top, 24)
+        .padding(.bottom, 12)
+    }
+
+    @ViewBuilder
+    private var noteActions: some View {
+        Picker("Template", selection: $notes.template) {
+            ForEach(NoteTemplate.allCases) { t in Text(t.displayName).tag(t) }
+        }
+        .frame(width: 180)
+        .disabled(notes.isEnhancing)
+        Spacer(minLength: 8)
+        if !notes.enhancedNotes.isEmpty && !notes.isEnhancing {
+            Button(isEditingNotes ? "Done" : "Edit notes") {
+                isEditingNotes.toggle()
+                if !isEditingNotes { notes.flush() }
+            }
+        }
+        Button {
+            isEditingNotes = false
+            notes.enhance()
+        } label: {
+            Label(notes.isEnhancing ? "Generating…" : notes.enhancedNotes.isEmpty ? "Generate notes" : "Regenerate",
+                  systemImage: "sparkles")
+        }
+        .disabled(!notes.canEnhance || isActive)
+        .help("Generate notes from your scratchpad and transcript using the selected template")
     }
 
     // MARK: - Content
@@ -212,10 +245,16 @@ struct MeetingDetailView: View {
                 ContentUnavailableView(
                     "No enhanced notes yet",
                     systemImage: "sparkles",
-                    description: Text("Press Enhance to merge your notes and the transcript into polished meeting notes.")
+                    description: Text("Generate notes to turn your scratchpad and transcript into a summary, decisions, and follow-ups.")
                 )
             } else {
-                editor(text: $notes.enhancedNotes)
+                if isEditingNotes {
+                    editor(text: $notes.enhancedNotes)
+                        .accessibilityLabel("Edit meeting notes (Markdown)")
+                } else {
+                    MeetingNotesReader(markdown: $notes.enhancedNotes, onSave: { notes.flush() })
+                        .disabled(!notes.canEdit)
+                }
             }
         case .transcript:
             if segments.isEmpty && !isActive {
@@ -234,8 +273,15 @@ struct MeetingDetailView: View {
                 }
             }
         case .myNotes:
+            VStack(alignment: .leading, spacing: 0) {
+                Text("Your rough notes · included when generating meeting notes")
+                    .font(.caption)
+                    .foregroundStyle(OatmealStyle.muted)
+                    .padding(.horizontal, 24)
+                    .padding(.top, 14)
             ZStack(alignment: .topLeading) {
                 editor(text: $notes.userNotes)
+                    .accessibilityLabel("Scratchpad")
                 if notes.userNotes.isEmpty {
                     Text(isActive ? "Type rough notes while the meeting runs — the AI folds them into the polished notes."
                                   : "Your raw notes for this meeting.")
@@ -244,6 +290,7 @@ struct MeetingDetailView: View {
                         .padding(.leading, 21)
                         .allowsHitTesting(false)
                 }
+            }
             }
         }
     }
@@ -257,6 +304,8 @@ struct MeetingDetailView: View {
                     .font(.title2)
             }
             .buttonStyle(.plain)
+            .foregroundStyle(OatmealStyle.accent)
+            .accessibilityLabel(playback.isPlaying ? "Pause audio" : "Play audio")
             .help("Play the meeting recording — click any line to jump there")
 
             Text("\(PlaybackModel.timeString(playback.currentTime)) / \(PlaybackModel.timeString(playback.duration))")
@@ -267,15 +316,18 @@ struct MeetingDetailView: View {
                 get: { playback.currentTime },
                 set: { playback.seek(to: $0) }
             ), in: 0...max(playback.duration, 0.1))
+            .accessibilityLabel("Recording position")
         }
-        .padding(.horizontal)
-        .padding(.vertical, 8)
+        .padding(.horizontal, 24)
+        .padding(.vertical, 12)
+        .background(OatmealStyle.paper)
     }
 
     private func editor(text: Binding<String>) -> some View {
         TextEditor(text: text)
             .disabled(!notes.canEdit)
-            .font(.body)
+            .font(.system(size: 14))
+            .lineSpacing(5)
             .scrollContentBackground(.hidden)
             .padding(.horizontal, 16)
             .padding(.vertical, 8)
@@ -296,7 +348,10 @@ struct MeetingDetailView: View {
                                       onSpeakerTap: segment.speaker == "me" ? nil : {
                                           renameSpeakerText = speakerNames[segment.speaker] ?? ""
                                           renameSpeakerKey = segment.speaker
-                                      })
+                                      },
+                                      onSeek: playback.available && !isActive ? {
+                                          playback.seek(to: segment.startTime)
+                                      } : nil)
                             .contentShape(Rectangle())
                             .onTapGesture {
                                 guard playback.available, !isActive else { return }
@@ -340,7 +395,7 @@ struct MeetingDetailView: View {
     }
 
     private func speakerColor(_ key: String) -> Color {
-        if key == "me" { return .blue }
+        if key == "me" { return OatmealStyle.accent }
         let palette: [Color] = [.purple, .orange, .teal, .pink]
         // n is a diarization index and should never be negative, but a negative
         // modulo here would be an out-of-bounds trap rather than a wrong colour.
@@ -430,9 +485,24 @@ struct TranscriptRow: View {
     let isInterim: Bool
     let isCurrent: Bool
     var onSpeakerTap: (() -> Void)?
+    var onSeek: (() -> Void)? = nil
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
+            if let time {
+                Group {
+                    if let onSeek {
+                        Button(PlaybackModel.timeString(time), action: onSeek)
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Jump to \(PlaybackModel.timeString(time))")
+                    } else {
+                        Text(PlaybackModel.timeString(time))
+                    }
+                }
+                .font(.caption.monospacedDigit())
+                .foregroundStyle(OatmealStyle.muted)
+                .frame(width: 50, alignment: .leading)
+            }
             Group {
                 if let onSpeakerTap {
                     Button(action: onSpeakerTap) {
@@ -446,22 +516,19 @@ struct TranscriptRow: View {
             }
             .font(.caption.bold())
             .foregroundStyle(speakerColor)
-            .frame(width: 90, alignment: .trailing)
+            .frame(width: 90, alignment: .leading)
             .lineLimit(1)
             .truncationMode(.tail)
             Text(text)
+                .font(.system(size: 14))
+                .lineSpacing(4)
                 .textSelection(.enabled)
                 .opacity(isInterim ? 0.5 : 1)
             Spacer(minLength: 0)
-            if let time {
-                Text(PlaybackModel.timeString(time))
-                    .font(.caption2.monospacedDigit())
-                    .foregroundStyle(.tertiary)
-            }
         }
-        .padding(.vertical, 2)
-        .padding(.horizontal, 4)
-        .background(isCurrent ? Color.accentColor.opacity(0.12) : Color.clear,
-                    in: RoundedRectangle(cornerRadius: 4))
+        .padding(.vertical, 10)
+        .padding(.horizontal, 8)
+        .background(isCurrent ? OatmealStyle.selection : Color.clear,
+                    in: RoundedRectangle(cornerRadius: 8))
     }
 }

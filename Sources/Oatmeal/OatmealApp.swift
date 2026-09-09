@@ -14,8 +14,10 @@ struct OatmealApp: App {
                 .environmentObject(recorder)
                 .frame(minWidth: 800, minHeight: 500)
         }
+        .defaultSize(width: 1120, height: 760)
         Settings {
             SettingsView()
+                .tint(OatmealStyle.accent)
         }
         MenuBarExtra {
             MenuBarContent(recorder: recorder)

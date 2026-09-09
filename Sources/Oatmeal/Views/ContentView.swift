@@ -48,10 +48,13 @@ struct ContentView: View {
         } detail: {
             detail
         }
-        .toolbar { toolbarContent }
+        .tint(OatmealStyle.accent)
+        .foregroundStyle(OatmealStyle.ink)
+        .background(OatmealStyle.paper)
         .safeAreaInset(edge: .top) { meetingEndedBanner }
         .onAppear {
             model.reload()
+            if model.selection == nil { model.selection = model.meetings.first?.id }
             Task { await CalendarService.shared.requestAccessAndStart() }
         }
         .onChange(of: recorder.activeMeeting?.id) { _, newValue in
@@ -106,28 +109,40 @@ struct ContentView: View {
                     }
                 }
             }
-            Section("Meetings") {
-                if model.displayed.isEmpty {
+            if model.displayed.isEmpty {
+                Section("Meetings") {
                     Text(model.searchText.isEmpty ? "No meetings yet" : "No matches")
                         .foregroundStyle(.secondary)
-                } else {
-                    ForEach(model.displayed) { meeting in
-                        meetingRow(meeting)
+                }
+            } else {
+                ForEach(meetingGroups, id: \.title) { group in
+                    Section(group.title) {
+                        ForEach(group.meetings) { meeting in
+                            meetingRow(meeting)
+                        }
                     }
                 }
             }
         }
-        .navigationSplitViewColumnWidth(min: 200, ideal: 240)
-        .navigationTitle("Meetings")
+        .scrollContentBackground(.hidden)
+        .background(OatmealStyle.paper)
+        .navigationSplitViewColumnWidth(min: 220, ideal: 260, max: 340)
+        .navigationTitle("Oatmeal")
         .searchable(text: $model.searchText, placement: .sidebar,
                     prompt: "Search meetings, transcripts, notes")
     }
 
+    private var meetingGroups: [(title: String, meetings: [Meeting])] {
+        MeetingTimeline.groups(model.displayed, date: \.createdAt, searching: !model.searchText.isEmpty)
+    }
+
     private func meetingRow(_ meeting: Meeting) -> some View {
         HStack {
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 5) {
                 Text(meeting.title)
+                    .font(.system(size: 13, weight: .semibold))
                     .lineLimit(1)
+                    .help(meeting.title)
                 Text(meeting.createdAt, style: .date)
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -139,6 +154,8 @@ struct ContentView: View {
                     .font(.caption)
             }
         }
+        .padding(.vertical, 7)
+        .listRowBackground(model.selection == meeting.id ? OatmealStyle.selection : Color.clear)
         .tag(meeting.id)
         .contextMenu {
             Button("Rename…") {
@@ -155,8 +172,17 @@ struct ContentView: View {
 
     // MARK: - Detail
 
-    @ViewBuilder
     private var detail: some View {
+        VStack(spacing: 0) {
+            captureBar
+            Divider()
+            meetingContent
+        }
+        .background(OatmealStyle.panel)
+    }
+
+    @ViewBuilder
+    private var meetingContent: some View {
         if model.selection == Self.actionItemsID {
             ActionItemsView { meetingId in
                 model.selection = meetingId
@@ -209,13 +235,44 @@ struct ContentView: View {
         }
     }
 
-    @ToolbarContentBuilder
-    private var toolbarContent: some ToolbarContent {
-        ToolbarItem(placement: .status) {
+    private var recordingStatus: String {
+        switch recorder.state {
+        case .idle: "Not recording"
+        case .starting: "Starting recording…"
+        case .recording: recorder.isPaused ? "Recording paused" : "Recording"
+        case .stopping: "Saving recording…"
+        }
+    }
+
+    private var captureBar: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 12) {
+                Label(recordingStatus,
+                      systemImage: recorder.isRecording ? "record.circle.fill" : "waveform.circle")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(recorder.isRecording ? Color.red : OatmealStyle.muted)
+                Spacer(minLength: 8)
+                SettingsLink { Image(systemName: "gearshape") }
+                    .help("Recording permissions and API keys")
+                    .accessibilityLabel("Settings")
+                if recorder.isRecording {
+                    Button(recorder.isPaused ? "Resume" : "Pause") { recorder.togglePause() }
+                        .disabled(recorder.isTransitioning)
+                }
+                Button {
+                    recorder.toggle()
+                } label: {
+                    Label(recorder.isTransitioning ? recordingStatus : recorder.isRecording ? "Stop & Save" : "Start recording",
+                          systemImage: recorder.isRecording ? "stop.fill" : "record.circle")
+                }
+                .disabled(recorder.isTransitioning)
+                .buttonStyle(.borderedProminent)
+                .tint(recorder.isRecording ? .red : OatmealStyle.accent)
+            }
             if recorder.isRecording {
                 HStack(spacing: 12) {
                     LevelMeter(label: "Mic", level: recorder.micLevel)
-                    LevelMeter(label: "Sys", level: recorder.systemLevel)
+                    LevelMeter(label: "System", level: recorder.systemLevel)
                     if let start = recorder.recordingStart {
                         TimelineView(.periodic(from: .now, by: 1)) { context in
                             Text(Self.elapsedString(from: start, to: context.date))
@@ -228,34 +285,21 @@ struct ContentView: View {
                             .font(.caption)
                             .foregroundStyle(recorder.connectionStatus == "Live" ? .green : .orange)
                     }
+                    if let active = recorder.activeMeeting, model.selection != active.id {
+                        Button("Open recording") { model.selection = active.id }
+                            .buttonStyle(.link)
+                            .help(active.title)
+                    }
                 }
+            } else {
+                Text("Capture meeting audio and turn it into useful notes.")
+                    .font(.caption)
+                    .foregroundStyle(OatmealStyle.muted)
             }
         }
-        ToolbarItem(placement: .primaryAction) {
-            if recorder.isRecording {
-                Button {
-                    recorder.togglePause()
-                } label: {
-                    Label(recorder.isPaused ? "Resume" : "Pause",
-                          systemImage: recorder.isPaused ? "play.circle" : "pause.circle")
-                }
-                .help(recorder.isPaused ? "Resume recording" : "Pause recording (audio is muted, the clock keeps running)")
-            }
-        }
-        ToolbarItem(placement: .primaryAction) {
-            Button {
-                recorder.toggle()
-            } label: {
-                if recorder.isRecording {
-                    Label("Stop", systemImage: "stop.circle.fill")
-                        .foregroundStyle(.red)
-                } else {
-                    Label("Record", systemImage: "record.circle")
-                }
-            }
-            .disabled(recorder.isTransitioning)
-            .help(recorder.isRecording ? "Stop recording" : "Start recording a meeting")
-        }
+        .padding(.horizontal, 24)
+        .padding(.vertical, 12)
+        .background(OatmealStyle.paper)
     }
 
     private static func elapsedString(from start: Date, to now: Date) -> String {

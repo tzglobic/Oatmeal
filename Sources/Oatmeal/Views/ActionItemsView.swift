@@ -20,16 +20,15 @@ final class ActionItemsModel: ObservableObject {
         var found: [ActionItem] = []
         let rows = (try? Store.shared.enhancedNotesWithMeetings()) ?? []
         for (note, meeting) in rows {
-            for (index, line) in note.content.components(separatedBy: "\n").enumerated() {
-                guard let (text, done) = Self.parseCheckbox(line) else { continue }
+            for item in NotesDocument(note.content).followUps {
                 found.append(ActionItem(
-                    id: "\(meeting.id):\(index)",
+                    id: "\(meeting.id):\(item.id)",
                     meetingId: meeting.id,
                     meetingTitle: meeting.title,
                     meetingDate: meeting.createdAt,
-                    lineIndex: index,
-                    text: text,
-                    done: done))
+                    lineIndex: item.id,
+                    text: item.text,
+                    done: item.done))
             }
         }
         items = found.sorted {
@@ -40,40 +39,12 @@ final class ActionItemsModel: ObservableObject {
 
     /// Replaces the state character of the leading `- [ ]` / `* [x]` marker,
     /// leaving the rest of the line — brackets included — untouched.
-    static func flippingCheckbox(in line: String, to done: Bool) -> String {
-        for marker in ["- [", "* ["] {
-            let indent = line.prefix { $0.isWhitespace }.count
-            guard let range = line.range(of: marker),
-                  line.distance(from: line.startIndex, to: range.lowerBound) == indent
-            else { continue }
-            let stateIndex = range.upperBound
-            guard stateIndex < line.endIndex else { continue }
-            let closeIndex = line.index(after: stateIndex)
-            guard closeIndex < line.endIndex, line[closeIndex] == "]" else { continue }
-            var updated = line
-            updated.replaceSubrange(stateIndex..<closeIndex, with: done ? "x" : " ")
-            return updated
-        }
-        return line
+    nonisolated static func flippingCheckbox(in line: String, to done: Bool) -> String {
+        NoteCheckbox.flipping(in: line, to: done)
     }
 
-    static func parseCheckbox(_ line: String) -> (text: String, done: Bool)? {
-        let trimmed = line.trimmingCharacters(in: .whitespaces)
-        for marker in ["- [", "* ["] {
-            guard trimmed.hasPrefix(marker), trimmed.count > marker.count + 1 else { continue }
-            let stateIndex = trimmed.index(trimmed.startIndex, offsetBy: marker.count)
-            let state = trimmed[stateIndex]
-            guard trimmed[trimmed.index(after: stateIndex)] == "]" else { continue }
-            let text = trimmed[trimmed.index(stateIndex, offsetBy: 2)...]
-                .trimmingCharacters(in: .whitespaces)
-            guard !text.isEmpty else { return nil }
-            switch state {
-            case " ": return (text, false)
-            case "x", "X": return (text, true)
-            default: continue
-            }
-        }
-        return nil
+    nonisolated static func parseCheckbox(_ line: String) -> (text: String, done: Bool)? {
+        NoteCheckbox.parse(line)
     }
 
     /// Flip `[ ]` ↔ `[x]` on the item's line in the stored enhanced note.
@@ -119,7 +90,17 @@ struct ActionItemsView: View {
     }
 
     var body: some View {
-        Group {
+        VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 8) {
+                OatmealSectionLabel(title: "Across your meetings")
+                Text("Action items")
+                    .font(.system(size: 26, weight: .bold, design: .rounded))
+                Text("\(model.items.filter { !$0.done }.count) open · Follow through on your meeting notes")
+                    .font(.subheadline)
+                    .foregroundStyle(OatmealStyle.muted)
+            }
+            .padding(24)
+            Divider()
             if model.items.isEmpty {
                 ContentUnavailableView(
                     "No action items",
@@ -135,15 +116,18 @@ struct ActionItemsView: View {
                                     Button {
                                         model.toggle(item)
                                     } label: {
-                                        Image(systemName: item.done ? "checkmark.circle.fill" : "circle")
-                                            .foregroundStyle(item.done ? .green : .secondary)
+                                        Image(systemName: item.done ? "checkmark.square.fill" : "square")
+                                            .foregroundStyle(OatmealStyle.accent)
                                     }
                                     .buttonStyle(.plain)
+                                    .accessibilityLabel("\(item.done ? "Mark incomplete" : "Complete"): \(item.text)")
                                     Text(item.text)
                                         .strikethrough(item.done)
                                         .foregroundStyle(item.done ? .secondary : .primary)
                                     Spacer(minLength: 0)
                                 }
+                                .padding(.vertical, 8)
+                                .listRowBackground(OatmealStyle.panel)
                             }
                         } header: {
                             HStack {
@@ -157,6 +141,8 @@ struct ActionItemsView: View {
                         }
                     }
                 }
+                .scrollContentBackground(.hidden)
+                .background(OatmealStyle.panel)
             }
         }
         .navigationTitle("Action Items")

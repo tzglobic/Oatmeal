@@ -49,11 +49,13 @@ private struct MenuBarContent: View {
         }
         if recorder.isRecording {
             Button("Stop Recording") { recorder.toggle() }
+                .disabled(recorder.isTransitioning)
             Button(recorder.isPaused ? "Resume Recording" : "Pause Recording") {
                 recorder.togglePause()
             }
         } else {
-            Button("Start Recording") { recorder.toggle() }
+            Button(recorder.state == .starting ? "Starting…" : "Start Recording") { recorder.toggle() }
+                .disabled(recorder.isTransitioning)
         }
         Divider()
         Button("Open Oatmeal") {

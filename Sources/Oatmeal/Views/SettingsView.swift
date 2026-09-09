@@ -126,6 +126,7 @@ struct SettingsView: View {
             PermissionsHealthView()
             Section("Recording") {
                 Toggle("Ask before leaving a finished meeting recording", isOn: $autoStop)
+                    .onChange(of: autoStop) { _, _ in MeetingEndDetector.shared.settingsChanged() }
                 Text("""
                     When the calendar event has ended and nobody has spoken for a few minutes \
                     — or nobody has spoken at all for 15 — Oatmeal asks whether the meeting is \

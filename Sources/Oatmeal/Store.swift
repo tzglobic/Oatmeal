@@ -22,6 +22,12 @@ final class Store {
         }
     }
 
+    /// Isolated databases for tests and future import/recovery tools.
+    init(dbQueue: DatabaseQueue) throws {
+        self.dbQueue = dbQueue
+        try Self.migrator.migrate(dbQueue)
+    }
+
     private static var migrator: DatabaseMigrator {
         var migrator = DatabaseMigrator()
 
@@ -86,6 +92,13 @@ final class Store {
             }
         }
 
+        migrator.registerMigration("v4-pending-enhancements") { db in
+            try db.create(table: "pending_enhancements") { t in
+                t.column("meetingId", .text).primaryKey()
+                    .references("meetings", onDelete: .cascade)
+            }
+        }
+
         return migrator
     }
 
@@ -100,6 +113,36 @@ final class Store {
     func save(_ meeting: Meeting) throws {
         try dbQueue.write { db in
             try meeting.save(db)
+        }
+    }
+
+    func finishMeeting(id: String, at date: Date) throws -> Meeting? {
+        try dbQueue.write { db in
+            try db.execute(sql: "UPDATE meetings SET endedAt = ? WHERE id = ?",
+                           arguments: [date, id])
+            guard let meeting = try Meeting.fetchOne(db, key: id) else { return nil }
+            try db.execute(sql: "INSERT OR IGNORE INTO pending_enhancements (meetingId) VALUES (?)", arguments: [id])
+            return meeting
+        }
+    }
+
+    func pendingEnhancements() throws -> [Meeting] {
+        try dbQueue.read { db in
+            try Meeting.fetchAll(db, sql: "SELECT meetings.* FROM meetings JOIN pending_enhancements ON meetings.id = pending_enhancements.meetingId ORDER BY meetings.createdAt")
+        }
+    }
+
+    func completeEnhancement(meetingId: String) throws {
+        try dbQueue.write { db in
+            try db.execute(sql: "DELETE FROM pending_enhancements WHERE meetingId = ?", arguments: [meetingId])
+        }
+    }
+
+    /// Apply generated titles only if the user has not renamed the meeting while waiting.
+    func updateGeneratedTitle(meetingId: String, expected: String, title: String) throws {
+        try dbQueue.write { db in
+            try db.execute(sql: "UPDATE meetings SET title = ? WHERE id = ? AND title = ?",
+                           arguments: [title, meetingId, expected])
         }
     }
 

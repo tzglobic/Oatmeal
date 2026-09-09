@@ -11,6 +11,18 @@ final class AudioPipeline {
     /// Called ~10x/sec with (mic, system) levels in 0…1.
     var onLevels: ((Float, Float) -> Void)?
 
+    var onError: ((Error) -> Void)?
+    private var writeError: Error?
+    private var running = false
+    private let usesTimer: Bool
+    private let write: (AVAudioFile, AVAudioPCMBuffer) throws -> Void
+
+    init(usesTimer: Bool = true,
+         write: @escaping (AVAudioFile, AVAudioPCMBuffer) throws -> Void = { try $0.write(from: $1) }) {
+        self.usesTimer = usesTimer
+        self.write = write
+    }
+
     private var micBuffer: [Int16] = []
     private var systemBuffer: [Int16] = []
     private var paused = false
@@ -26,20 +38,22 @@ final class AudioPipeline {
         commonFormat: .pcmFormatInt16, sampleRate: 16_000, channels: 2, interleaved: true)!
 
     func appendMic(_ samples: [Int16]) {
+        lock.lock()
         append(samples, to: &micBuffer)
+        lock.unlock()
     }
 
     func appendSystem(_ samples: [Int16]) {
+        lock.lock()
         append(samples, to: &systemBuffer)
+        lock.unlock()
     }
 
     private func append(_ samples: [Int16], to buffer: inout [Int16]) {
-        lock.lock()
         buffer.append(contentsOf: samples)
         if buffer.count > maxBufferedFrames {
             buffer.removeFirst(buffer.count - maxBufferedFrames)
         }
-        lock.unlock()
     }
 
     func start(recordingURL: URL) throws {
@@ -54,6 +68,8 @@ final class AudioPipeline {
             commonFormat: .pcmFormatInt16,
             interleaved: true)
 
+        running = true
+        guard usesTimer else { return }
         let t = DispatchSource.makeTimerSource(queue: queue)
         t.schedule(deadline: .now() + .milliseconds(100), repeating: .milliseconds(100))
         t.setEventHandler { [weak self] in self?.drain() }
@@ -61,12 +77,25 @@ final class AudioPipeline {
         timer = t
     }
 
-    func stop() {
+    @discardableResult
+    func stop() -> Error? {
         timer?.cancel()
         timer = nil
-        // Finalize the .m4a on the same queue drain() uses, so we never nil the
-        // file out from under an in-flight write. AVAudioFile flushes on dealloc.
-        queue.async { [self] in audioFile = nil }
+        // Producers have stopped. Drain their remaining samples before closing
+        // the file and before Deepgram receives CloseStream.
+        return queue.sync {
+            guard running else { return writeError }
+            while true {
+                lock.lock()
+                let remaining = max(micBuffer.count, systemBuffer.count)
+                lock.unlock()
+                guard remaining > 0 else { break }
+                drain()
+            }
+            running = false
+            audioFile = nil
+            return writeError
+        }
     }
 
     /// While paused, both channels emit silence — the Deepgram timeline and the
@@ -80,6 +109,7 @@ final class AudioPipeline {
     }
 
     private func drain() {
+        guard running else { return }
         lock.lock()
         var mic: [Int16]
         var system: [Int16]
@@ -134,6 +164,13 @@ final class AudioPipeline {
         interleaved.withUnsafeBufferPointer { src in
             channelData[0].update(from: src.baseAddress!, count: interleaved.count)
         }
-        try? file.write(from: buffer)
+        do {
+            try write(file, buffer)
+        } catch {
+            if writeError == nil {
+                writeError = error
+                onError?(error)
+            }
+        }
     }
 }

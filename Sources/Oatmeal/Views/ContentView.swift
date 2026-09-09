@@ -100,7 +100,7 @@ struct ContentView: View {
                     ForEach(calendar.upcoming.prefix(6)) { event in
                         UpcomingMeetingRow(
                             meeting: event,
-                            recordDisabled: recorder.isRecording,
+                            recordDisabled: recorder.state != .idle,
                             record: { Task { await recorder.start(calendarMeeting: event) } })
                             .selectionDisabled()
                     }
@@ -253,6 +253,7 @@ struct ContentView: View {
                     Label("Record", systemImage: "record.circle")
                 }
             }
+            .disabled(recorder.isTransitioning)
             .help(recorder.isRecording ? "Stop recording" : "Start recording a meeting")
         }
     }

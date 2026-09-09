@@ -11,6 +11,23 @@ import UserNotifications
 /// ~/Library/Application Support/Oatmeal/last-exception.log so a recurrence is
 /// diagnosable instead of invisible.
 final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
+    private var terminationRequested = false
+
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard !terminationRequested else { return .terminateLater }
+        terminationRequested = true
+        Task { @MainActor in
+            let saved = await RecordingController.shared.shutdown()
+            if !saved { terminationRequested = false }
+            sender.reply(toApplicationShouldTerminate: saved)
+        }
+        return .terminateLater
+    }
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        Task { @MainActor in RecordingController.shared.resumePendingEnhancements() }
+    }
+
     func applicationWillFinishLaunching(_ notification: Notification) {
         UNUserNotificationCenter.current().delegate = self
         // Register categories at launch, not just when Calendar access is

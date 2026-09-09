@@ -25,7 +25,7 @@ struct MeetingDetailView: View {
 
     init(meeting: Meeting) {
         self.meeting = meeting
-        _notes = StateObject(wrappedValue: NotesModel(meeting: meeting))
+        _notes = StateObject(wrappedValue: NotesModel.shared(for: meeting))
         _playback = StateObject(wrappedValue: PlaybackModel(path: meeting.audioFilePath))
         _editedTitle = State(initialValue: meeting.title)
         _speakerNames = State(initialValue: meeting.speakerNameMap)
@@ -78,9 +78,8 @@ struct MeetingDetailView: View {
                 if recorder.activeMeeting?.id == meeting.id {
                     // The .m4a is finalized now — make playback pick it up.
                     playback.load(path: meeting.audioFilePath)
-                    // Auto-enhance the meeting that just finished recording.
+                    // RecordingController starts enhancement even without this view.
                     tab = .notes
-                    notes.enhance(auto: true)
                 }
             }
         }

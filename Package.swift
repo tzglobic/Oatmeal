@@ -16,6 +16,7 @@ let package = Package(
                 .product(name: "KeychainAccess", package: "KeychainAccess"),
             ],
             path: "Sources/Oatmeal"
-        )
+        ),
+        .testTarget(name: "OatmealTests", dependencies: ["Oatmeal"])
     ]
 )

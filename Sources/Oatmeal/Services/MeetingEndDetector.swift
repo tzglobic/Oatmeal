@@ -76,7 +76,10 @@ final class MeetingEndDetector: ObservableObject {
     /// On by default; the Settings toggle writes this.
     static var isEnabled: Bool {
         get { UserDefaults.standard.object(forKey: enabledKey) as? Bool ?? true }
-        set { UserDefaults.standard.set(newValue, forKey: enabledKey) }
+        set {
+            UserDefaults.standard.set(newValue, forKey: enabledKey)
+            shared.settingsChanged()
+        }
     }
 
     // MARK: - State
@@ -88,7 +91,29 @@ final class MeetingEndDetector: ObservableObject {
     private var evaluateTimer: Timer?
     private var countdownTimer: Timer?
 
-    private init() {}
+    private let now: () -> Date
+    private let enabled: () -> Bool
+    private let notify: (Trigger, TimeInterval) -> Void
+    private let withdraw: () -> Void
+    private let usesTimers: Bool
+    private var running = false
+
+    init(now: @escaping () -> Date = Date.init,
+         enabled: (() -> Bool)? = nil,
+         usesTimers: Bool = true,
+         notify: @escaping (Trigger, TimeInterval) -> Void = { MeetingNotifier.notifyMeetingEnded(trigger: $0, within: $1) },
+         withdraw: @escaping () -> Void = { MeetingNotifier.withdrawMeetingEnded() }) {
+        self.now = now
+        self.enabled = enabled ?? { MeetingEndDetector.isEnabled }
+        self.usesTimers = usesTimers
+        self.notify = notify
+        self.withdraw = withdraw
+    }
+
+    func settingsChanged() {
+        if !enabled() { clearPending() }
+        lastSoundAt = now()
+    }
 
     // MARK: - Lifecycle
 
@@ -96,20 +121,23 @@ final class MeetingEndDetector: ObservableObject {
     /// recording is associated with one, which unlocks the earlier of the two
     /// triggers.
     func begin(eventEnd: Date?) {
+        running = true
         self.eventEnd = eventEnd
-        lastSoundAt = Date()
+        lastSoundAt = now()
         snoozedUntil = nil
         isPaused = false
         clearPending()
 
         evaluateTimer?.invalidate()
-        evaluateTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { _ in
-            Task { @MainActor in MeetingEndDetector.shared.evaluate() }
+        guard usesTimers else { return }
+        evaluateTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.evaluate() }
         }
     }
 
     /// Stops watching — call whenever the recording ends, however it ended.
     func end() {
+        running = false
         evaluateTimer?.invalidate()
         evaluateTimer = nil
         eventEnd = nil
@@ -119,7 +147,7 @@ final class MeetingEndDetector: ObservableObject {
     /// Fed from `AudioPipeline.onLevels` (~10x/sec) on both channels.
     func noteLevels(mic: Float, system: Float) {
         if mic > Self.silenceThreshold || system > Self.silenceThreshold {
-            lastSoundAt = Date()
+            lastSoundAt = now()
             // Sound during the reaction window answers the question for us:
             // the meeting is clearly still going.
             if pending != nil { keepRecording() }
@@ -138,22 +166,25 @@ final class MeetingEndDetector: ObservableObject {
     /// Keep Recording — dismiss and don't ask again for `snooze`.
     func keepRecording() {
         clearPending()
-        snoozedUntil = Date().addingTimeInterval(Self.snooze)
-        lastSoundAt = Date()
+        snoozedUntil = now().addingTimeInterval(Self.snooze)
+        lastSoundAt = now()
     }
 
     /// Stop & Save — don't wait out the rest of the window.
     func stopNow() {
+        guard running, pending != nil else { return }
         clearPending()
         onStop?()
     }
 
     // MARK: - Detection
 
-    private func evaluate() {
-        guard Self.isEnabled, pending == nil else { return }
+    func evaluate() {
+        guard running else { return }
+        guard enabled() else { settingsChanged(); return }
+        guard pending == nil else { return }
 
-        let now = Date()
+        let now = now()
         // While paused or snoozed the silence clock is held at zero, so the
         // count starts fresh from the moment either state lifts.
         guard !isPaused else {
@@ -175,18 +206,22 @@ final class MeetingEndDetector: ObservableObject {
     }
 
     private func propose(_ trigger: Trigger) {
-        pending = Pending(trigger: trigger, deadline: Date().addingTimeInterval(Self.reactionWindow))
-        MeetingNotifier.notifyMeetingEnded(trigger: trigger, within: Self.reactionWindow)
+        pending = Pending(trigger: trigger, deadline: now().addingTimeInterval(Self.reactionWindow))
+        notify(trigger, Self.reactionWindow)
 
         countdownTimer?.invalidate()
+        guard usesTimers else { return }
+        let deadline = pending!.deadline
         countdownTimer = Timer.scheduledTimer(
-            withTimeInterval: Self.reactionWindow, repeats: false) { _ in
-                Task { @MainActor in MeetingEndDetector.shared.reactionWindowClosed() }
+            withTimeInterval: Self.reactionWindow, repeats: false) { [weak self] _ in
+                Task { @MainActor in self?.reactionWindowClosed(deadline: deadline) }
             }
     }
 
-    private func reactionWindowClosed() {
-        guard pending != nil else { return }
+    func reactionWindowClosed(deadline: Date) {
+        guard running, let pending, pending.deadline == deadline else { return }
+        guard enabled(), !isPaused else { clearPending(); return }
+        guard now() >= deadline else { return }
         clearPending()
         onStop?()
     }
@@ -196,7 +231,7 @@ final class MeetingEndDetector: ObservableObject {
         countdownTimer = nil
         if pending != nil {
             pending = nil
-            MeetingNotifier.withdrawMeetingEnded()
+            withdraw()
         }
     }
 }

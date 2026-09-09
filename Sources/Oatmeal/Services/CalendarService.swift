@@ -122,6 +122,10 @@ final class CalendarService: ObservableObject {
 
     /// Finds the first video-call link. Teams links live in Outlook event bodies
     /// (teams.microsoft.com/l/meetup-join/… or the newer /meet/ form).
+    private static func matchesHost(_ host: String, domain: String) -> Bool {
+        host == domain || host.hasSuffix("." + domain)
+    }
+
     static func detectCall(in texts: [String?]) -> (URL?, String?) {
         guard let detector = try? NSDataDetector(
             types: NSTextCheckingResult.CheckingType.link.rawValue) else { return (nil, nil) }
@@ -135,14 +139,14 @@ final class CalendarService: ObservableObject {
                 // happens to carry an allowlisted host from ever being opened.
                 guard let url = match.url, url.scheme?.lowercased() == "https",
                       let host = url.host?.lowercased() else { continue }
-                if host.contains("teams.microsoft.com") || host.contains("teams.live.com") {
+                if matchesHost(host, domain: "teams.microsoft.com") || matchesHost(host, domain: "teams.live.com") {
                     return (url, "Teams")
                 }
-                if host.hasSuffix("zoom.us"), url.path.contains("/j/") || url.path.contains("/my/") {
+                if matchesHost(host, domain: "zoom.us"), url.path.contains("/j/") || url.path.contains("/my/") {
                     return (url, "Zoom")
                 }
                 if host == "meet.google.com" { return (url, "Meet") }
-                if host.hasSuffix("webex.com") { return (url, "Webex") }
+                if matchesHost(host, domain: "webex.com") { return (url, "Webex") }
             }
         }
         return (nil, nil)
